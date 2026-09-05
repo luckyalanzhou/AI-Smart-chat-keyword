@@ -1,4 +1,4 @@
-import { Navigation, NavigationStack, List, Section, VStack, HStack, Text, TextField, SecureField, Button, Picker, modifiers, useState, useEffect, fetch } from "scripting"
+import { Navigation, NavigationStack, List, Section, VStack, HStack, Text, TextField, SecureField, Button, Picker, modifiers, useState, useEffect, fetch, Script } from "scripting"
 type Gender = "女" | "男" | "不透露"
 type Mood = "开心" | "忙碌" | "疲惫" | "难过" | "生气" | "暧昧" | "相亲" | "普通"
 type Profile = { gender: Gender; age: number; mood: Mood; personality: "内向" | "外向"; tone: "温柔" | "活泼" | "成熟" | "简洁" | "土味情话" | "连环屁" }
@@ -57,13 +57,13 @@ function App() {
   return (
     <NavigationStack>
       <List modifiers={modifiers().listStyle("insetGroup")}>
-        <Section header={<VStack alignment="leading" spacing={4}><Text modifiers={modifiers().font(28).bold()}>智能聊天键盘</Text><Text>让每一次回复，都更像你。</Text></VStack>}>
-          <Text>AI 会根据对方原话、人设和语气生成 3 条候选回复。点击后只插入，不会自动发送。</Text>
+        <Section header={<VStack alignment="leading" spacing={2}><Text modifiers={modifiers().font(22).bold()}>智能聊天键盘</Text><Text modifiers={modifiers().foregroundStyle("secondaryLabel")}>结合语境，帮你自然接话。</Text></VStack>}>
+          <Text>AI 会结合近期聊天记录、对方最新消息、人设和语气生成 3 条候选回复。点击后只插入，不会自动发送。</Text>
         </Section>
         <Section title="我的人设">
           <Picker title="性别" value={profile.gender} onChanged={(v: any) => save({ ...profile, gender: v as Gender })}><Text tag="女">女</Text><Text tag="男">男</Text><Text tag="不透露">不透露</Text></Picker>
           <TextField title="年龄" value={String(profile.age)} onChanged={(v) => save({ ...profile, age: Math.max(1, Math.min(120, Number(v) || 25)) })} />
-          <Picker title="当前状态" value={["开心", "忙碌", "疲惫", "难过", "生气", "相亲", "普通"].indexOf(profile.mood)} onChanged={(v: any) => save({ ...profile, mood: (["开心", "忙碌", "疲惫", "难过", "生气", "相亲", "普通"][Number(v)] || "普通") as Mood })}><Text tag={0}>开心</Text><Text tag={1}>忙碌</Text><Text tag={2}>疲惫</Text><Text tag={3}>难过</Text><Text tag={4}>生气</Text><Text tag={5}>相亲</Text><Text tag={6}>普通</Text></Picker>
+          <Picker title="当前状态" value={["开心", "忙碌", "疲惫", "难过", "生气", "暧昧", "相亲", "普通"].indexOf(profile.mood)} onChanged={(v: any) => save({ ...profile, mood: (["开心", "忙碌", "疲惫", "难过", "生气", "暧昧", "相亲", "普通"][Number(v)] || "普通") as Mood })}><Text tag={0}>开心</Text><Text tag={1}>忙碌</Text><Text tag={2}>疲惫</Text><Text tag={3}>难过</Text><Text tag={4}>生气</Text><Text tag={5}>暧昧</Text><Text tag={6}>相亲</Text><Text tag={7}>普通</Text></Picker>
           <Picker title="性格" value={profile.personality === "内向" ? 0 : 1} onChanged={(v: any) => save({ ...profile, personality: Number(v) === 0 ? "内向" : "外向" })}><Text tag={0}>内向</Text><Text tag={1}>外向</Text></Picker>
           <Picker title="表达风格" value={["温柔", "活泼", "成熟", "简洁", "土味情话", "连环屁"].indexOf(profile.tone)} onChanged={(v: any) => save({ ...profile, tone: (["温柔", "活泼", "成熟", "简洁", "土味情话", "连环屁"][Number(v)] || "温柔") as Profile["tone"] })}><Text tag={0}>温柔</Text><Text tag={1}>活泼</Text><Text tag={2}>成熟</Text><Text tag={3}>简洁</Text><Text tag={4}>土味情话</Text><Text tag={5}>连环屁</Text></Picker>
         </Section>
@@ -82,11 +82,16 @@ function App() {
           <Text>{preview}</Text>
         </Section>
         <Section title="开始使用">
-          <Text>1. 在聊天中复制对方消息</Text><Text>2. 切换到智能聊天键盘</Text><Text>3. 点输入框并长按粘贴</Text><Text>4. 点击生成回复，选择一条插入</Text>
+          <Text>1. 在系统设置中添加 Scripting 键盘，并开启“允许完全访问”（网络与粘贴需要此权限）</Text><Text>2. 在聊天中复制最近几句记录，或只复制对方最后一句</Text><Text>3. 切换到智能聊天键盘，粘贴聊天记录和最新消息</Text><Text>4. 选择关系和回复目标，点击生成后点选一条插入</Text><Text>说明：iOS 不允许键盘直接读取聊天 App 的历史消息；聊天上下文只会来自你主动粘贴的内容。</Text>
         </Section>
       </List>
     </NavigationStack>
   )
 }
 
-Navigation.present(<App />)
+async function main() {
+  await Navigation.present({ element: <App /> })
+  Script.exit()
+}
+
+main()
