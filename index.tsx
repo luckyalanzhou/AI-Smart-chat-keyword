@@ -1,4 +1,4 @@
-import { Navigation, NavigationStack, List, Section, VStack, HStack, Text, TextField, SecureField, Button, Picker, modifiers, useState, useEffect, fetch, Script } from "scripting"
+import { Navigation, NavigationStack, List, Section, VStack, HStack, Text, TextField, SecureField, Button, Picker, modifiers, useState, useEffect, fetch } from "scripting"
 type Gender = "女" | "男" | "不透露"
 type Mood = "开心" | "忙碌" | "疲惫" | "难过" | "生气" | "暧昧" | "相亲" | "普通"
 type Profile = { gender: Gender; age: number; mood: Mood; personality: "内向" | "外向"; tone: "温柔" | "活泼" | "成熟" | "简洁" | "土味情话" | "连环屁" }
@@ -91,9 +91,4 @@ function App() {
   )
 }
 
-async function main() {
-  await Navigation.present({ element: <App /> })
-  Script.exit()
-}
-
-main()
+Navigation.present(<App />)
