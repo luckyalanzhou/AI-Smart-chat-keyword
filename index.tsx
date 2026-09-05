@@ -23,16 +23,17 @@ const listModelsURL = (config: AIConfig) => config.provider === "Google Gemini"
   ? "https://generativelanguage.googleapis.com/v1beta/models"
   : config.endpoint.replace(/\/chat\/completions\/?$/, "/models")
 
-function SettingsCard({ title, detail, children }: { title: string; detail?: string; children: any }) {
+function SettingsCard({ title, detail, eyebrow, children }: { title: string; detail?: string; eyebrow?: string; children: any }) {
   return (
     <VStack
       alignment="leading"
-      spacing={10}
+      spacing={12}
       padding={14}
       background="secondarySystemBackground"
       modifiers={modifiers().frame({ maxWidth: "infinity" })}
     >
-      <VStack alignment="leading" spacing={2}>
+      <VStack alignment="leading" spacing={3}>
+        {eyebrow ? <Text modifiers={modifiers().font(10).bold().foregroundStyle("tertiaryLabel")}>{eyebrow}</Text> : null}
         <Text modifiers={modifiers().font(16).bold().foregroundStyle("label")}>{title}</Text>
         {detail ? <Text modifiers={modifiers().font(12).foregroundStyle("secondaryLabel")}>{detail}</Text> : null}
       </VStack>
@@ -41,12 +42,19 @@ function SettingsCard({ title, detail, children }: { title: string; detail?: str
   )
 }
 
+function StatusItem({ title, value, active }: { title: string; value: string; active: boolean }) {
+  return (
+    <VStack alignment="leading" spacing={2} padding={{ horizontal: 10, vertical: 8 }} background="tertiarySystemBackground" modifiers={modifiers().frame({ maxWidth: "infinity" })}>
+      <Text modifiers={modifiers().font(10).foregroundStyle("secondaryLabel")}>{title}</Text>
+      <Text modifiers={modifiers().font(12).bold().foregroundStyle(active ? "label" : "tertiaryLabel")}>{value}</Text>
+    </VStack>
+  )
+}
+
 function App() {
   const dismiss = Navigation.useDismiss()
   const [profile, setProfile] = useState<Profile>((Storage.get<Profile>("profile", { shared: true }) || defaultProfile))
   const [ai, setAI] = useState<AIConfig>(Storage.get<AIConfig>("ai", { shared: true }) || defaultAI)
-  const [sentence, setSentence] = useState("")
-  const [preview, setPreview] = useState("点“生成回复”看看效果")
   const [showKey, setShowKey] = useState(false)
   const [models, setModels] = useState<string[]>([])
   const [modelNotice, setModelNotice] = useState("填写 API Key 后会自动读取可用模型")
@@ -81,9 +89,7 @@ function App() {
     setModelNotice("正在准备读取模型…")
     saveAI({ ...ai, provider, ...providerDefaults[provider] })
   }, [ai, saveAI])
-  const makePreview = useCallback(() => {
-    setPreview(`当前输入：\n${sentence.trim() || "（未输入）"}\n\n请在键盘中粘贴消息后点击“生成回复”。`)
-  }, [sentence])
+  const isReady = Boolean(ai.apiKey.trim() && ai.endpoint.trim() && ai.model.trim())
   const keyField = useMemo(
     () => showKey
       ? <TextField title="API Key" prompt="粘贴服务商提供的密钥" value={ai.apiKey} onChanged={(value) => saveAI({ ...ai, apiKey: value })} />
@@ -105,13 +111,22 @@ function App() {
           toolbar={{ topBarTrailing: <Button title="关闭" systemImage="xmark" action={dismiss} /> }}
           modifiers={modifiers().frame({ maxWidth: "infinity" })}
         >
-          <VStack alignment="leading" spacing={6} padding={18} background="#7C5CFC" modifiers={modifiers().frame({ maxWidth: "infinity" })}>
-            <Text modifiers={modifiers().font(25).bold().foregroundStyle("white")}>智能聊天键盘</Text>
-            <Text modifiers={modifiers().font(14).foregroundStyle("white")}>读懂上下文，帮你自然接话。</Text>
-            <Text modifiers={modifiers().font(12).foregroundStyle("white")}>生成三条候选 · 仅插入，不自动发送</Text>
+          <VStack alignment="leading" spacing={7} padding={18} background="#5B5BD6" modifiers={modifiers().frame({ maxWidth: "infinity" })}>
+            <Text modifiers={modifiers().font(11).bold().foregroundStyle("white")}>AI REPLY KEYBOARD</Text>
+            <Text modifiers={modifiers().font(26).bold().foregroundStyle("white")}>自然地接上每句话</Text>
+            <Text modifiers={modifiers().font(14).foregroundStyle("white")}>理解你主动粘贴的上下文，生成三条可编辑候选。</Text>
+            <Text modifiers={modifiers().font(12).foregroundStyle("white")}>{isReady ? "已准备就绪 · 键盘内直接生成" : "还差一步 · 配置 AI 服务后即可使用"}</Text>
           </VStack>
 
-          <SettingsCard title="回复风格" detail="这些设置会同步给键盘中的回复生成。">
+          <SettingsCard eyebrow="当前状态" title={isReady ? "键盘已准备就绪" : "等待完成服务配置"} detail={isReady ? "设置会自动保存。切换到键盘后，粘贴聊天上下文即可生成。" : "填写 API Key 和模型名称后，键盘才能生成回复。"}>
+            <HStack spacing={8} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
+              <StatusItem title="AI 服务" value={ai.provider} active={Boolean(ai.apiKey.trim())} />
+              <StatusItem title="回复风格" value={profile.tone} active={true} />
+              <StatusItem title="发送方式" value="手动确认" active={true} />
+            </HStack>
+          </SettingsCard>
+
+          <SettingsCard eyebrow="01 · REPLY STYLE" title="回复风格" detail="这些偏好会同步到键盘；无需额外保存。">
           <Picker title="性别" value={profile.gender} onChanged={(value: any) => saveProfile({ ...profile, gender: value as Gender })}>{(["女", "男", "不透露"] as Gender[]).map((gender) => <Text tag={gender}>{gender}</Text>)}</Picker>
           <TextField title="年龄" value={String(profile.age)} onChanged={(value) => saveProfile({ ...profile, age: clampAge(value) })} />
           <Picker title="当前状态" value={moods.indexOf(profile.mood)} onChanged={(value: any) => saveProfile({ ...profile, mood: moods[Number(value)] || "普通" })}>{moods.map((mood, index) => <Text tag={index}>{mood}</Text>)}</Picker>
@@ -119,7 +134,7 @@ function App() {
           <Picker title="表达风格" value={tones.indexOf(profile.tone)} onChanged={(value: any) => saveProfile({ ...profile, tone: tones[Number(value)] || "温柔" })}>{tones.map((tone, index) => <Text tag={index}>{tone}</Text>)}</Picker>
           </SettingsCard>
 
-          <SettingsCard title="AI 服务" detail="密钥保存在本机；聊天内容仅发送到你选择的服务商。">
+          <SettingsCard eyebrow="02 · AI CONNECTION" title="AI 服务" detail="密钥保存在本机；只有你粘贴的聊天内容会发送到所选服务商。">
           <Picker title="服务商" value={ai.provider} onChanged={(value: any) => changeProvider(value as AIProvider)}>{providers.map((provider) => <Text tag={provider}>{provider}</Text>)}</Picker>
           <HStack spacing={8}>{keyField}<Button title="" systemImage={showKey ? "eye" : "eye.slash"} action={() => setShowKey(!showKey)} /></HStack>
           {models.length > 0 ? <Picker title="模型（已读取）" value={ai.model} onChanged={(v: any) => saveAI({ ...ai, model: v as string })}>{models.map((model) => <Text tag={model}>{model}</Text>)}</Picker> : <TextField title="模型名称" value={ai.model} onChanged={(v) => saveAI({ ...ai, model: v })} />}
@@ -128,17 +143,13 @@ function App() {
           <TextField title="接口地址" value={ai.endpoint} onChanged={(v) => saveAI({ ...ai, endpoint: v })} />
           </SettingsCard>
 
-          <SettingsCard title="快速预览" detail="在键盘内粘贴聊天记录，时间行会自动忽略。">
-          <TextField title="输入一句话" prompt="例如：周五一起吃饭吗？" value={sentence} onChanged={setSentence} />
-          <Button title="查看预览" action={makePreview} />
-          <Text modifiers={modifiers().font(13).foregroundStyle("label")}>{preview}</Text>
-          </SettingsCard>
-
-          <SettingsCard title="开始使用">
-            <Text>① 开启 Scripting 键盘的“允许完全访问”</Text>
-            <Text>② 复制聊天窗口最近几句，再切换到键盘粘贴</Text>
-            <Text>③ 点击生成，选择一条插入到输入框</Text>
-            <Text modifiers={modifiers().font(12).foregroundStyle("secondaryLabel")}>聊天记录由你主动粘贴；iOS 键盘不会读取聊天 App 的历史内容。</Text>
+          <SettingsCard eyebrow="03 · HOW IT WORKS" title="三步开始回复" detail="聊天记录由你主动粘贴；脚本不会读取其他 App 的聊天历史。">
+            <HStack spacing={10} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
+              <StatusItem title="1" value="复制上下文" active={true} />
+              <StatusItem title="2" value="键盘内粘贴" active={true} />
+              <StatusItem title="3" value="点选插入" active={true} />
+            </HStack>
+            <Text modifiers={modifiers().font(12).foregroundStyle("secondaryLabel")}>请先在系统设置中为 Scripting 键盘开启“允许完全访问”，以便连接你选择的 AI 服务。</Text>
           </SettingsCard>
         </VStack>
       </ScrollView>
