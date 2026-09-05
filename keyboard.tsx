@@ -136,6 +136,7 @@ function SmartReplyKeyboard() {
   const [transcript, setTranscript] = useState("")
   const [replies, setReplies] = useState<string[]>(["先粘贴对方消息", "再点击生成回复", "点选即可插入"])
   const [notice, setNotice] = useState("点输入框后长按粘贴对方消息")
+  const [retryText, setRetryText] = useState("")
   const [busy, setBusy] = useState(false)
 
   const generate = useCallback(async (input?: string) => {
@@ -147,6 +148,7 @@ function SmartReplyKeyboard() {
     const controller = new AbortController()
     activeRequest = controller
     setBusy(true)
+    setRetryText("")
     setNotice("AI 正在理解这句话…")
     try {
       const context = compactContext(transcript)
@@ -165,14 +167,14 @@ function SmartReplyKeyboard() {
       if (result.length === 0) throw new Error("AI 返回格式不正确")
       if (requestId !== activeRequestId) return
       setReplies(result)
+      setRetryText("")
       setNotice("AI 已生成，点击回复插入；不会自动发送")
     } catch (error) {
       if (requestId !== activeRequestId) return
       if ((error as any)?.name === "AbortError") return
       setReplies(generateReplies(text, profile))
-      const detail = String(error).replace("Error: ", "")
-      const accessHint = /network|联网|连接|internet/i.test(detail) ? "；请确认 Scripting 键盘已开启“允许完全访问”" : ""
-      setNotice(`AI 暂时不可用，已提供本地建议：${detail}${accessHint}`)
+      setRetryText(text)
+      setNotice("AI 暂不可用，已切换本地建议")
     } finally {
       if (requestId === activeRequestId) setBusy(false)
     }
@@ -210,7 +212,8 @@ function SmartReplyKeyboard() {
       <HStack spacing={4} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
         <Text modifiers={modifiers().font(11).foregroundStyle("tertiaryLabel")}>{notice}</Text>
         <Spacer />
-        <Button buttonStyle="plain" action={() => { activeRequest?.abort(); activeRequestId++; setSentence(""); setTranscript(""); setLastInputLength(0); setReplies(["先粘贴对方消息", "再点击生成回复", "点选即可插入"]); setNotice("已清空") }}><Text modifiers={modifiers().font(11).foregroundStyle("secondaryLabel")}>清空</Text></Button>
+        {retryText ? <Button buttonStyle="plain" action={() => { if (!busy) void generate(retryText) }}><Text modifiers={modifiers().font(11).foregroundStyle("tint")}>重试</Text></Button> : null}
+        <Button buttonStyle="plain" action={() => { activeRequest?.abort(); activeRequestId++; setSentence(""); setTranscript(""); setLastInputLength(0); setRetryText(""); setReplies(["先粘贴对方消息", "再点击生成回复", "点选即可插入"]); setNotice("已清空") }}><Text modifiers={modifiers().font(11).foregroundStyle("secondaryLabel")}>清空</Text></Button>
       </HStack>
       <HStack spacing={4} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
         {replyCards}
