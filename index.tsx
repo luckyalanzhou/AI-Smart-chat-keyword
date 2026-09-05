@@ -57,17 +57,17 @@ function App() {
   return (
     <NavigationStack>
       <List modifiers={modifiers().listStyle("insetGroup")}>
-        <Section header={<VStack alignment="leading" spacing={2}><Text modifiers={modifiers().font(22).bold()}>智能聊天键盘</Text><Text modifiers={modifiers().foregroundStyle("secondaryLabel")}>结合语境，帮你自然接话。</Text></VStack>}>
-          <Text>AI 会结合近期聊天记录、对方最新消息、人设和语气生成 3 条候选回复。点击后只插入，不会自动发送。</Text>
+        <Section header={<VStack alignment="leading" spacing={3}><Text modifiers={modifiers().font(24).bold().foregroundStyle("label")}>智能聊天键盘</Text><Text modifiers={modifiers().font(14).foregroundStyle("secondaryLabel")}>读懂上下文，帮你自然接话。</Text></VStack>}>
+          <VStack alignment="leading" spacing={4}><Text modifiers={modifiers().font(15).foregroundStyle("label")}>三条候选回复 · 仅插入，不自动发送</Text><Text modifiers={modifiers().font(13).foregroundStyle("secondaryLabel")}>粘贴多句聊天记录即可，时间文本会自动忽略。</Text></VStack>
         </Section>
-        <Section title="我的人设">
+        <Section title="回复风格">
           <Picker title="性别" value={profile.gender} onChanged={(v: any) => save({ ...profile, gender: v as Gender })}><Text tag="女">女</Text><Text tag="男">男</Text><Text tag="不透露">不透露</Text></Picker>
           <TextField title="年龄" value={String(profile.age)} onChanged={(v) => save({ ...profile, age: Math.max(1, Math.min(120, Number(v) || 25)) })} />
           <Picker title="当前状态" value={["开心", "忙碌", "疲惫", "难过", "生气", "暧昧", "相亲", "普通"].indexOf(profile.mood)} onChanged={(v: any) => save({ ...profile, mood: (["开心", "忙碌", "疲惫", "难过", "生气", "暧昧", "相亲", "普通"][Number(v)] || "普通") as Mood })}><Text tag={0}>开心</Text><Text tag={1}>忙碌</Text><Text tag={2}>疲惫</Text><Text tag={3}>难过</Text><Text tag={4}>生气</Text><Text tag={5}>暧昧</Text><Text tag={6}>相亲</Text><Text tag={7}>普通</Text></Picker>
           <Picker title="性格" value={profile.personality === "内向" ? 0 : 1} onChanged={(v: any) => save({ ...profile, personality: Number(v) === 0 ? "内向" : "外向" })}><Text tag={0}>内向</Text><Text tag={1}>外向</Text></Picker>
           <Picker title="表达风格" value={["温柔", "活泼", "成熟", "简洁", "土味情话", "连环屁"].indexOf(profile.tone)} onChanged={(v: any) => save({ ...profile, tone: (["温柔", "活泼", "成熟", "简洁", "土味情话", "连环屁"][Number(v)] || "温柔") as Profile["tone"] })}><Text tag={0}>温柔</Text><Text tag={1}>活泼</Text><Text tag={2}>成熟</Text><Text tag={3}>简洁</Text><Text tag={4}>土味情话</Text><Text tag={5}>连环屁</Text></Picker>
         </Section>
-        <Section title="AI 设置">
+        <Section title="AI 服务">
           <Picker title="服务商" value={ai.provider} onChanged={(v: any) => changeProvider(v as AIProvider)}><Text tag="OpenAI">OpenAI</Text><Text tag="DeepSeek">DeepSeek</Text><Text tag="通义千问">通义千问</Text><Text tag="智谱AI">智谱AI</Text><Text tag="月之暗面">月之暗面</Text><Text tag="Google Gemini">Google Gemini</Text><Text tag="自定义兼容接口">自定义兼容接口</Text></Picker>
           <HStack spacing={8}>{keyField}<Button title="" systemImage={showKey ? "eye" : "eye.slash"} action={() => setShowKey(!showKey)} /></HStack>
           {models.length > 0 ? <Picker title="模型（已读取）" value={ai.model} onChanged={(v: any) => saveAI({ ...ai, model: v as string })}>{models.map((model) => <Text tag={model}>{model}</Text>)}</Picker> : <TextField title="模型名称" value={ai.model} onChanged={(v) => saveAI({ ...ai, model: v })} />}
@@ -76,13 +76,13 @@ function App() {
           <TextField title="接口地址" value={ai.endpoint} onChanged={(v) => saveAI({ ...ai, endpoint: v })} />
           <Text>API Key 仅保存在本机；发送内容会经过你选择的 AI 服务商。</Text>
         </Section>
-        <Section title="快速预览">
+        <Section title="使用说明">
           <TextField title="输入一句话" prompt="例如：周五一起吃饭吗？" value={sentence} onChanged={setSentence} />
-          <Button title="查看使用说明" action={makePreview} />
+          <Button title="查看预览" action={makePreview} />
           <Text>{preview}</Text>
         </Section>
         <Section title="开始使用">
-          <Text>1. 在系统设置中添加 Scripting 键盘，并开启“允许完全访问”（网络与粘贴需要此权限）</Text><Text>2. 在聊天中复制最近几句记录，或只复制对方最后一句</Text><Text>3. 切换到智能聊天键盘，粘贴聊天记录和最新消息</Text><Text>4. 选择关系和回复目标，点击生成后点选一条插入</Text><Text>说明：iOS 不允许键盘直接读取聊天 App 的历史消息；聊天上下文只会来自你主动粘贴的内容。</Text>
+          <Text>① 开启 Scripting 键盘的“允许完全访问”</Text><Text>② 复制聊天窗口最近几句，再切换到键盘粘贴</Text><Text>③ 点击生成，选择一条插入到输入框</Text><Text modifiers={modifiers().font(12).foregroundStyle("secondaryLabel")}>聊天记录由你主动粘贴；iOS 键盘不会读取聊天 App 的历史内容。</Text>
         </Section>
       </List>
     </NavigationStack>

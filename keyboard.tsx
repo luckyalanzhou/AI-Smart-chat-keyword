@@ -54,14 +54,26 @@ let activeRequest: AbortController | null = null
 
 const MAX_CONTEXT_CHARS = 2400
 
+function isTimestampLine(line: string) {
+  const value = line.trim().replace(/^[\[【]\s*|\s*[\]】]$/g, "")
+  // Covers common WeChat/QQ/iMessage copy formats, but only removes a line when
+  // the entire line is a timestamp so a real message mentioning a time survives.
+  return /^(?:(?:\d{4}[年./-]\d{1,2}(?:[月./-]\d{1,2}日?)?)|(?:今天|昨天|前天)|(?:星期[一二三四五六日天]|周[一二三四五六日天]))?\s*(?:(?:凌晨|早上|上午|中午|下午|晚上)\s*)?\d{1,2}[:：]\d{2}(?:\s*(?:AM|PM))?$/i.test(value)
+    || /^\d{4}[年./-]\d{1,2}[月./-]\d{1,2}日?$/.test(value)
+}
+
+function transcriptLines(value: string) {
+  return value.split(/\r?\n/).map((line) => line.trim()).filter((line) => line && !isTimestampLine(line))
+}
+
 function compactContext(value: string) {
-  const lines = value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
+  const lines = transcriptLines(value)
   return lines.slice(-12).join("\n").slice(-MAX_CONTEXT_CHARS)
 }
 
 function latestMessage(transcript: string, explicitMessage: string) {
   if (explicitMessage.trim()) return explicitMessage.trim()
-  const lines = transcript.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
+  const lines = transcriptLines(transcript)
   // Prefer an explicitly marked incoming line. If the paste has no labels, the
   // final non-empty line is the most useful, least surprising fallback.
   const incoming = [...lines].reverse().find((line) => /^(对方|TA|他|她|对方说|TA说)\s*[:：]/i.test(line))
@@ -147,7 +159,7 @@ function SmartReplyKeyboard() {
         <Text modifiers={modifiers().font(11).foregroundStyle("tertiaryLabel")}>上下文 · {profile.tone}</Text>
         <Button action={() => CustomKeyboard.dismiss()}><Text modifiers={modifiers().font(12).foregroundStyle("secondaryLabel").padding({ horizontal: 7, vertical: 4 }).background("secondarySystemBackground")}>完成</Text></Button>
       </HStack>
-      <TextField title="聊天上下文" prompt="粘贴最近几句；支持“我：”“对方：”" value={transcript} onChanged={setTranscript} />
+      <TextField title="聊天上下文" prompt="粘贴最近几句；时间行会自动忽略" value={transcript} onChanged={setTranscript} />
       <HStack spacing={6}>
         <TextField title="对方最后一句" prompt="可留空，自动从上下文提取" autofocus={true} value={sentence} onChanged={onSentenceChanged} />
         <Button action={() => { if (!busy) void generate() }}><Text modifiers={modifiers().font(14).foregroundStyle("white").padding({ horizontal: 12, vertical: 8 }).background("#635BFF")}>{busy ? "生成中" : "生成"}</Text></Button>
