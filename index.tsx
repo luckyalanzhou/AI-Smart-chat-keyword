@@ -101,7 +101,10 @@ async function main() {
   // A visible Close action ends the presented page. Disabling minimize makes a
   // swipe dismissal end the script too, rather than leaving it in the run list.
   Script.enableMinimize(false)
-  await Navigation.present({ element: <App /> })
+  await Navigation.present({
+    element: <App />,
+    modalPresentationStyle: "fullScreen",
+  })
   Script.exit()
 }
 
