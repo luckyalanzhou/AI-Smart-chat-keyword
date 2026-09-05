@@ -1,0 +1,25 @@
+{
+  "runInApp" : true,
+  "color" : "#7C5CFC",
+  "remoteResource" : null,
+  "permissions" : null,
+  "entry" : "index.tsx",
+  "version" : "1.0.0",
+  "icon" : "person.wave.2.fill",
+  "localizedDescriptions" : {
+    "zh" : "根据上句、性别、年龄和当前状态生成自然回复，点一下即可插入。"
+  },
+  "author" : null,
+  "description" : "A privacy-friendly smart reply custom keyboard.",
+  "iconImage" : null,
+  "localizedNames" : {
+    "zh" : "智能聊天键盘"
+  },
+  "contributors" : [
+
+  ],
+  "intentInputTypes" : [
+
+  ],
+  "name" : "智能聊天键盘"
+}

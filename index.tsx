@@ -1,0 +1,92 @@
+import { Navigation, NavigationStack, List, Section, VStack, HStack, Text, TextField, SecureField, Button, Picker, modifiers, useState, useEffect, fetch } from "scripting"
+type Gender = "女" | "男" | "不透露"
+type Mood = "开心" | "忙碌" | "疲惫" | "难过" | "生气" | "暧昧" | "相亲" | "普通"
+type Profile = { gender: Gender; age: number; mood: Mood; personality: "内向" | "外向"; tone: "温柔" | "活泼" | "成熟" | "简洁" | "土味情话" | "连环屁" }
+const defaultProfile: Profile = { gender: "不透露", age: 25, mood: "普通", personality: "外向", tone: "温柔" }
+type AIProvider = "OpenAI" | "DeepSeek" | "通义千问" | "智谱AI" | "月之暗面" | "Google Gemini" | "自定义兼容接口"
+type AIConfig = { provider: AIProvider; endpoint: string; model: string; apiKey: string }
+const providerDefaults: Record<AIProvider, { endpoint: string; model: string }> = {
+  "OpenAI": { endpoint: "https://api.openai.com/v1/chat/completions", model: "gpt-4o-mini" },
+  "DeepSeek": { endpoint: "https://api.deepseek.com/chat/completions", model: "deepseek-chat" },
+  "通义千问": { endpoint: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions", model: "qwen-turbo" },
+  "智谱AI": { endpoint: "https://open.bigmodel.cn/api/paas/v4/chat/completions", model: "glm-4-flash" },
+  "月之暗面": { endpoint: "https://api.moonshot.cn/v1/chat/completions", model: "moonshot-v1-8k" },
+  "Google Gemini": { endpoint: "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent", model: "gemini-2.0-flash" },
+  "自定义兼容接口": { endpoint: "https://api.openai.com/v1/chat/completions", model: "" }
+}
+const defaultAI: AIConfig = { provider: "OpenAI", ...providerDefaults.OpenAI, apiKey: "" }
+
+function App() {
+  const [profile, setProfile] = useState<Profile>((Storage.get<Profile>("profile", { shared: true }) || defaultProfile))
+  const [ai, setAI] = useState<AIConfig>(Storage.get<AIConfig>("ai", { shared: true }) || defaultAI)
+  const [sentence, setSentence] = useState("")
+  const [preview, setPreview] = useState("点“生成回复”看看效果")
+  const [showKey, setShowKey] = useState(false)
+  const [models, setModels] = useState<string[]>([])
+  const [modelNotice, setModelNotice] = useState("填写 API Key 后会自动读取可用模型")
+  const keyField = showKey
+    ? <TextField title="API Key" prompt="粘贴服务商提供的密钥" value={ai.apiKey} onChanged={(v) => saveAI({ ...ai, apiKey: v })} />
+    : <SecureField title="API Key" prompt="粘贴服务商提供的密钥" value={ai.apiKey} onChanged={(v) => saveAI({ ...ai, apiKey: v })} />
+
+  const save = (next: Profile) => {
+    setProfile(next)
+    Storage.set("profile", next, { shared: true })
+  }
+  const saveAI = (next: AIConfig) => { setAI(next); Storage.set("ai", next, { shared: true }) }
+  const listURL = (config: AIConfig) => config.provider === "Google Gemini" ? "https://generativelanguage.googleapis.com/v1beta/models" : config.endpoint.replace(/\/chat\/completions\/?$/, "/models")
+  const refreshModels = async () => {
+    if (!ai.apiKey.trim()) { setModelNotice("请先填写 API Key"); return }
+    setModelNotice("正在读取最新模型…")
+    try {
+      const gemini = ai.provider === "Google Gemini"
+      const url = gemini ? `${listURL(ai)}?key=${encodeURIComponent(ai.apiKey.trim())}` : listURL(ai)
+      const response = await fetch(url, { headers: gemini ? {} : { Authorization: `Bearer ${ai.apiKey.trim()}` } })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data?.error?.message || `HTTP ${response.status}`)
+      const values = gemini ? (Array.isArray(data?.models) ? data.models.map((m: any) => String(m.name || "").replace(/^models\//, "")).filter((m: string) => m) : []) : (Array.isArray(data?.data) ? data.data.map((m: any) => String(m.id || "")).filter((m: string) => m) : [])
+      if (!values.length) throw new Error("没有读取到模型")
+      setModels(values)
+      if (!values.includes(ai.model)) saveAI({ ...ai, model: values[0] })
+      setModelNotice(`已读取 ${values.length} 个可用模型`)
+    } catch (error) { setModels([]); setModelNotice(`读取失败：${String(error).replace("Error: ", "")}`) }
+  }
+  const changeProvider = (provider: AIProvider) => { setModels([]); setModelNotice("正在准备读取模型…"); saveAI({ ...ai, provider, ...providerDefaults[provider] }) }
+  const makePreview = () => setPreview("当前输入：\n" + (sentence.trim() || "（未输入）") + "\n\n请在键盘中粘贴消息后点击“生成回复”。")
+  useEffect(() => { if (ai.apiKey.trim()) void refreshModels() }, [ai.provider])
+
+  return (
+    <NavigationStack>
+      <List modifiers={modifiers().listStyle("insetGroup")}>
+        <Section header={<VStack alignment="leading" spacing={4}><Text modifiers={modifiers().font(28).bold()}>智能聊天键盘</Text><Text>让每一次回复，都更像你。</Text></VStack>}>
+          <Text>AI 会根据对方原话、人设和语气生成 3 条候选回复。点击后只插入，不会自动发送。</Text>
+        </Section>
+        <Section title="我的人设">
+          <Picker title="性别" value={profile.gender} onChanged={(v: any) => save({ ...profile, gender: v as Gender })}><Text tag="女">女</Text><Text tag="男">男</Text><Text tag="不透露">不透露</Text></Picker>
+          <TextField title="年龄" value={String(profile.age)} onChanged={(v) => save({ ...profile, age: Math.max(1, Math.min(120, Number(v) || 25)) })} />
+          <Picker title="当前状态" value={["开心", "忙碌", "疲惫", "难过", "生气", "相亲", "普通"].indexOf(profile.mood)} onChanged={(v: any) => save({ ...profile, mood: (["开心", "忙碌", "疲惫", "难过", "生气", "相亲", "普通"][Number(v)] || "普通") as Mood })}><Text tag={0}>开心</Text><Text tag={1}>忙碌</Text><Text tag={2}>疲惫</Text><Text tag={3}>难过</Text><Text tag={4}>生气</Text><Text tag={5}>相亲</Text><Text tag={6}>普通</Text></Picker>
+          <Picker title="性格" value={profile.personality === "内向" ? 0 : 1} onChanged={(v: any) => save({ ...profile, personality: Number(v) === 0 ? "内向" : "外向" })}><Text tag={0}>内向</Text><Text tag={1}>外向</Text></Picker>
+          <Picker title="表达风格" value={["温柔", "活泼", "成熟", "简洁", "土味情话", "连环屁"].indexOf(profile.tone)} onChanged={(v: any) => save({ ...profile, tone: (["温柔", "活泼", "成熟", "简洁", "土味情话", "连环屁"][Number(v)] || "温柔") as Profile["tone"] })}><Text tag={0}>温柔</Text><Text tag={1}>活泼</Text><Text tag={2}>成熟</Text><Text tag={3}>简洁</Text><Text tag={4}>土味情话</Text><Text tag={5}>连环屁</Text></Picker>
+        </Section>
+        <Section title="AI 设置">
+          <Picker title="服务商" value={ai.provider} onChanged={(v: any) => changeProvider(v as AIProvider)}><Text tag="OpenAI">OpenAI</Text><Text tag="DeepSeek">DeepSeek</Text><Text tag="通义千问">通义千问</Text><Text tag="智谱AI">智谱AI</Text><Text tag="月之暗面">月之暗面</Text><Text tag="Google Gemini">Google Gemini</Text><Text tag="自定义兼容接口">自定义兼容接口</Text></Picker>
+          <HStack spacing={8}>{keyField}<Button title="" systemImage={showKey ? "eye" : "eye.slash"} action={() => setShowKey(!showKey)} /></HStack>
+          {models.length > 0 ? <Picker title="模型（已读取）" value={ai.model} onChanged={(v: any) => saveAI({ ...ai, model: v as string })}>{models.map((model) => <Text tag={model}>{model}</Text>)}</Picker> : <TextField title="模型名称" value={ai.model} onChanged={(v) => saveAI({ ...ai, model: v })} />}
+          <Button title="刷新可用模型" action={() => { void refreshModels() }} />
+          <Text>{modelNotice}</Text>
+          <TextField title="接口地址" value={ai.endpoint} onChanged={(v) => saveAI({ ...ai, endpoint: v })} />
+          <Text>API Key 仅保存在本机；发送内容会经过你选择的 AI 服务商。</Text>
+        </Section>
+        <Section title="快速预览">
+          <TextField title="输入一句话" prompt="例如：周五一起吃饭吗？" value={sentence} onChanged={setSentence} />
+          <Button title="查看使用说明" action={makePreview} />
+          <Text>{preview}</Text>
+        </Section>
+        <Section title="开始使用">
+          <Text>1. 在聊天中复制对方消息</Text><Text>2. 切换到智能聊天键盘</Text><Text>3. 点输入框并长按粘贴</Text><Text>4. 点击生成回复，选择一条插入</Text>
+        </Section>
+      </List>
+    </NavigationStack>
+  )
+}
+
+Navigation.present(<App />)
