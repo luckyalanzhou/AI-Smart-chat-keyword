@@ -1,4 +1,4 @@
-import { Navigation, NavigationStack, List, Section, VStack, HStack, Text, TextField, SecureField, Button, Picker, modifiers, useState, useEffect, fetch } from "scripting"
+import { Navigation, NavigationStack, List, Section, VStack, HStack, Text, TextField, SecureField, Button, Picker, modifiers, useState, useEffect, fetch, Script } from "scripting"
 type Gender = "女" | "男" | "不透露"
 type Mood = "开心" | "忙碌" | "疲惫" | "难过" | "生气" | "暧昧" | "相亲" | "普通"
 type Profile = { gender: Gender; age: number; mood: Mood; personality: "内向" | "外向"; tone: "温柔" | "活泼" | "成熟" | "简洁" | "土味情话" | "连环屁" }
@@ -17,6 +17,7 @@ const providerDefaults: Record<AIProvider, { endpoint: string; model: string }> 
 const defaultAI: AIConfig = { provider: "OpenAI", ...providerDefaults.OpenAI, apiKey: "" }
 
 function App() {
+  const dismiss = Navigation.useDismiss()
   const [profile, setProfile] = useState<Profile>((Storage.get<Profile>("profile", { shared: true }) || defaultProfile))
   const [ai, setAI] = useState<AIConfig>(Storage.get<AIConfig>("ai", { shared: true }) || defaultAI)
   const [sentence, setSentence] = useState("")
@@ -58,7 +59,12 @@ function App() {
 
   return (
     <NavigationStack>
-      <List modifiers={modifiers().listStyle("insetGroup")}>
+      <List
+        navigationTitle="智能聊天键盘"
+        navigationBarTitleDisplayMode="inline"
+        toolbar={{ topBarTrailing: <Button title="关闭" systemImage="xmark" action={dismiss} /> }}
+        modifiers={modifiers().listStyle("insetGroup")}
+      >
         <Section header={<VStack alignment="leading" spacing={3}><Text modifiers={modifiers().font(24).bold().foregroundStyle("label")}>智能聊天键盘</Text><Text modifiers={modifiers().font(14).foregroundStyle("secondaryLabel")}>读懂上下文，帮你自然接话。</Text></VStack>}>
           <VStack alignment="leading" spacing={4}><Text modifiers={modifiers().font(15).foregroundStyle("label")}>三条候选回复 · 仅插入，不自动发送</Text><Text modifiers={modifiers().font(13).foregroundStyle("secondaryLabel")}>粘贴多句聊天记录即可，时间文本会自动忽略。</Text></VStack>
         </Section>
@@ -91,4 +97,12 @@ function App() {
   )
 }
 
-Navigation.present(<App />)
+async function main() {
+  // A visible Close action ends the presented page. Disabling minimize makes a
+  // swipe dismissal end the script too, rather than leaving it in the run list.
+  Script.enableMinimize(false)
+  await Navigation.present({ element: <App /> })
+  Script.exit()
+}
+
+main()
