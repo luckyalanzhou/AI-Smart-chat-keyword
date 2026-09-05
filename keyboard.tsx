@@ -190,29 +190,29 @@ function SmartReplyKeyboard() {
   }, [])
   const replyCards = useMemo(() => replies.map((reply) => (
     <Button buttonStyle="bordered" action={() => insert(reply)}>
-      <Text lineLimit={2} multilineTextAlignment="center" modifiers={modifiers().font(14).foregroundStyle("label").padding({ horizontal: 8, vertical: 9 }).frame({ maxWidth: "infinity" })}>{reply}</Text>
+      <Text lineLimit={2} multilineTextAlignment="center" modifiers={modifiers().font(13).foregroundStyle("label").padding({ horizontal: 6, vertical: 6 }).frame({ maxWidth: "infinity" })}>{reply}</Text>
     </Button>
   )), [insert, replies])
 
   return (
-    <VStack alignment="leading" spacing={7} padding={{ horizontal: 8, vertical: 10 }} background="systemBackground" modifiers={modifiers().frame({ maxWidth: "infinity" })}>
-      <HStack spacing={6} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
+    <VStack alignment="leading" spacing={4} padding={{ horizontal: 8, vertical: 4 }} background="systemBackground" modifiers={modifiers().frame({ maxWidth: "infinity" })}>
+      <HStack spacing={4} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
         <Text modifiers={modifiers().font(17).bold().foregroundStyle("label")}>智能回复</Text>
         <Text modifiers={modifiers().font(11).foregroundStyle("tertiaryLabel")}>· {profile.tone}</Text>
         <Spacer />
         <Button buttonStyle="plain" action={() => CustomKeyboard.dismiss()}><Text modifiers={modifiers().font(12).foregroundStyle("secondaryLabel").padding({ horizontal: 7, vertical: 4 })}>完成</Text></Button>
       </HStack>
       <TextField textFieldStyle="roundedBorder" title="聊天上下文" prompt="粘贴最近几句；时间行会自动忽略" value={transcript} onChanged={setTranscript} />
-      <HStack spacing={6} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
+      <HStack spacing={4} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
         <TextField textFieldStyle="roundedBorder" title="对方最后一句" prompt="可留空，自动从上下文提取" autofocus={true} value={sentence} onChanged={onSentenceChanged} modifiers={modifiers().frame({ maxWidth: "infinity" })} />
         <Button buttonStyle="borderedProminent" action={() => { if (!busy) void generate() }}><Text>{busy ? "生成中" : "生成"}</Text></Button>
       </HStack>
-      <HStack spacing={6} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
+      <HStack spacing={4} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
         <Text modifiers={modifiers().font(11).foregroundStyle("tertiaryLabel")}>{notice}</Text>
         <Spacer />
         <Button buttonStyle="plain" action={() => { activeRequest?.abort(); activeRequestId++; setSentence(""); setTranscript(""); setLastInputLength(0); setReplies(["先粘贴对方消息", "再点击生成回复", "点选即可插入"]); setNotice("已清空") }}><Text modifiers={modifiers().font(11).foregroundStyle("secondaryLabel")}>清空</Text></Button>
       </HStack>
-      <HStack spacing={6} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
+      <HStack spacing={4} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
         {replyCards}
       </HStack>
     </VStack>
@@ -220,5 +220,5 @@ function SmartReplyKeyboard() {
 }
 
 // CustomKeyboard 文档建议在 keyboard.tsx 中只调用一次 present。
-CustomKeyboard.requestHeight(340)
+CustomKeyboard.requestHeight(300)
 CustomKeyboard.present(<SmartReplyKeyboard />)
