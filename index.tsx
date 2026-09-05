@@ -97,15 +97,10 @@ function App() {
   )
 }
 
-async function main() {
-  // A visible Close action ends the presented page. Disabling minimize makes a
-  // swipe dismissal end the script too, rather than leaving it in the run list.
-  Script.enableMinimize(false)
-  await Navigation.present({
-    element: <App />,
-    modalPresentationStyle: "fullScreen",
-  })
-  Script.exit()
-}
-
-main()
+// Keep the lifecycle aligned with the official Quick Start: the script exits
+// only after the presented view has actually been dismissed.
+Script.enableMinimize(false)
+Navigation.present({
+  element: <App />,
+  modalPresentationStyle: "fullScreen",
+}).then(() => Script.exit())
