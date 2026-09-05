@@ -135,19 +135,21 @@ function SmartReplyKeyboard() {
   const [lastInputLength, setLastInputLength] = useState(0)
   const [transcript, setTranscript] = useState("")
   const [replies, setReplies] = useState<string[]>(["先粘贴对方消息", "再点击生成回复", "点选即可插入"])
+  const [hasReplyResults, setHasReplyResults] = useState(false)
   const [notice, setNotice] = useState("点输入框后长按粘贴对方消息")
   const [retryText, setRetryText] = useState("")
   const [busy, setBusy] = useState(false)
 
   const generate = useCallback(async (input?: string) => {
     const text = latestMessage(transcript, input ?? sentence)
-    if (!text) { setNotice("请先点输入框，然后长按粘贴对方消息"); return }
-    if (!ai.apiKey.trim()) { setNotice("请先在主 App 设置 AI API Key"); return }
+    if (!text) { setHasReplyResults(false); setNotice("请先点输入框，然后长按粘贴对方消息"); return }
+    if (!ai.apiKey.trim()) { setHasReplyResults(false); setNotice("请先在主 App 设置 AI API Key"); return }
     const requestId = ++activeRequestId
     activeRequest?.abort()
     const controller = new AbortController()
     activeRequest = controller
     setBusy(true)
+    setHasReplyResults(false)
     setRetryText("")
     setNotice("AI 正在理解这句话…")
     try {
@@ -167,12 +169,14 @@ function SmartReplyKeyboard() {
       if (result.length === 0) throw new Error("AI 返回格式不正确")
       if (requestId !== activeRequestId) return
       setReplies(result)
+      setHasReplyResults(true)
       setRetryText("")
       setNotice("AI 已生成，点击回复插入；不会自动发送")
     } catch (error) {
       if (requestId !== activeRequestId) return
       if ((error as any)?.name === "AbortError") return
       setReplies(generateReplies(text, profile))
+      setHasReplyResults(true)
       setRetryText(text)
       setNotice("AI 暂不可用，已切换本地建议")
     } finally {
@@ -193,12 +197,12 @@ function SmartReplyKeyboard() {
   const replyCards = useMemo(() => (
     <VStack alignment="leading" spacing={4} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
       {replies.map((reply) => (
-        <Button buttonStyle="bordered" action={() => insert(reply)}>
+        <Button buttonStyle="bordered" disabled={!hasReplyResults} action={() => insert(reply)}>
           <Text lineLimit={1} modifiers={modifiers().font(13).foregroundStyle("label").padding({ horizontal: 8, vertical: 5 }).frame({ maxWidth: "infinity" })}>{reply}</Text>
         </Button>
       ))}
     </VStack>
-  ), [insert, replies])
+  ), [hasReplyResults, insert, replies])
 
   return (
     <VStack alignment="leading" spacing={4} padding={{ horizontal: 8, vertical: 4 }} background="systemBackground" modifiers={modifiers().frame({ maxWidth: "infinity" })}>
@@ -217,7 +221,7 @@ function SmartReplyKeyboard() {
         <Text modifiers={modifiers().font(11).foregroundStyle("tertiaryLabel")}>{notice}</Text>
         <Spacer />
         {retryText ? <Button buttonStyle="plain" action={() => { if (!busy) void generate(retryText) }}><Text modifiers={modifiers().font(11).foregroundStyle("tint")}>重试</Text></Button> : null}
-        <Button buttonStyle="plain" action={() => { activeRequest?.abort(); activeRequestId++; setSentence(""); setTranscript(""); setLastInputLength(0); setRetryText(""); setReplies(["先粘贴对方消息", "再点击生成回复", "点选即可插入"]); setNotice("已清空") }}><Text modifiers={modifiers().font(11).foregroundStyle("secondaryLabel")}>清空</Text></Button>
+        <Button buttonStyle="plain" action={() => { activeRequest?.abort(); activeRequestId++; setSentence(""); setTranscript(""); setLastInputLength(0); setRetryText(""); setHasReplyResults(false); setReplies(["先粘贴对方消息", "再点击生成回复", "点选即可插入"]); setNotice("已清空") }}><Text modifiers={modifiers().font(11).foregroundStyle("secondaryLabel")}>清空</Text></Button>
       </HStack>
       {replyCards}
     </VStack>
