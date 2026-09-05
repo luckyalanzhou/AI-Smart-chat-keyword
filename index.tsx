@@ -43,7 +43,9 @@ function App() {
       const response = await fetch(url, { headers: gemini ? {} : { Authorization: `Bearer ${ai.apiKey.trim()}` } })
       const data = await response.json()
       if (!response.ok) throw new Error(data?.error?.message || `HTTP ${response.status}`)
-      const values = gemini ? (Array.isArray(data?.models) ? data.models.map((m: any) => String(m.name || "").replace(/^models\//, "")).filter((m: string) => m) : []) : (Array.isArray(data?.data) ? data.data.map((m: any) => String(m.id || "")).filter((m: string) => m) : [])
+      const values = gemini
+        ? (Array.isArray(data?.models) ? data.models.filter((m: any) => Array.isArray(m?.supportedGenerationMethods) && m.supportedGenerationMethods.includes("generateContent")).map((m: any) => String(m.name || "").replace(/^models\//, "")).filter((m: string) => m) : [])
+        : (Array.isArray(data?.data) ? data.data.map((m: any) => String(m.id || "")).filter((m: string) => m) : [])
       if (!values.length) throw new Error("没有读取到模型")
       setModels(values)
       if (!values.includes(ai.model)) saveAI({ ...ai, model: values[0] })
