@@ -219,9 +219,6 @@ function SmartReplyKeyboard() {
   )
 }
 
-async function main() {
-  CustomKeyboard.requestHeight(340)
-  CustomKeyboard.present(<SmartReplyKeyboard />)
-}
-
-main()
+// CustomKeyboard 文档建议在 keyboard.tsx 中只调用一次 present。
+CustomKeyboard.requestHeight(340)
+CustomKeyboard.present(<SmartReplyKeyboard />)
