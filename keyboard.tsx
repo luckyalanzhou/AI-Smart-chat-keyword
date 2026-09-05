@@ -190,11 +190,15 @@ function SmartReplyKeyboard() {
     CustomKeyboard.playInputClick()
     setNotice("已插入，是否发送由你确认")
   }, [])
-  const replyCards = useMemo(() => replies.map((reply) => (
-    <Button buttonStyle="bordered" action={() => insert(reply)}>
-      <Text lineLimit={2} multilineTextAlignment="center" modifiers={modifiers().font(13).foregroundStyle("label").padding({ horizontal: 6, vertical: 6 }).frame({ maxWidth: "infinity" })}>{reply}</Text>
-    </Button>
-  )), [insert, replies])
+  const replyCards = useMemo(() => (
+    <VStack alignment="leading" spacing={4} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
+      {replies.map((reply) => (
+        <Button buttonStyle="bordered" action={() => insert(reply)}>
+          <Text lineLimit={1} modifiers={modifiers().font(13).foregroundStyle("label").padding({ horizontal: 8, vertical: 5 }).frame({ maxWidth: "infinity" })}>{reply}</Text>
+        </Button>
+      ))}
+    </VStack>
+  ), [insert, replies])
 
   return (
     <VStack alignment="leading" spacing={4} padding={{ horizontal: 8, vertical: 4 }} background="systemBackground" modifiers={modifiers().frame({ maxWidth: "infinity" })}>
@@ -215,13 +219,11 @@ function SmartReplyKeyboard() {
         {retryText ? <Button buttonStyle="plain" action={() => { if (!busy) void generate(retryText) }}><Text modifiers={modifiers().font(11).foregroundStyle("tint")}>重试</Text></Button> : null}
         <Button buttonStyle="plain" action={() => { activeRequest?.abort(); activeRequestId++; setSentence(""); setTranscript(""); setLastInputLength(0); setRetryText(""); setReplies(["先粘贴对方消息", "再点击生成回复", "点选即可插入"]); setNotice("已清空") }}><Text modifiers={modifiers().font(11).foregroundStyle("secondaryLabel")}>清空</Text></Button>
       </HStack>
-      <HStack spacing={4} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
-        {replyCards}
-      </HStack>
+      {replyCards}
     </VStack>
   )
 }
 
 // CustomKeyboard 文档建议在 keyboard.tsx 中只调用一次 present。
-CustomKeyboard.requestHeight(300)
+CustomKeyboard.requestHeight(340)
 CustomKeyboard.present(<SmartReplyKeyboard />)
