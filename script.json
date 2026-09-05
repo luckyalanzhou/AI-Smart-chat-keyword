@@ -9,7 +9,7 @@
   "localizedDescriptions" : {
     "zh" : "根据上句、性别、年龄和当前状态生成自然回复，点一下即可插入。"
   },
-  "author" : null,
+  "author" : "luckyalanzhou",
   "description" : "A privacy-friendly smart reply custom keyboard.",
   "iconImage" : null,
   "localizedNames" : {
