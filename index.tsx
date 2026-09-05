@@ -1,4 +1,4 @@
-import { Navigation, NavigationStack, List, Section, VStack, HStack, Text, TextField, SecureField, Button, Picker, modifiers, useState, useEffect, useCallback, useMemo, fetch, Script } from "scripting"
+import { Navigation, NavigationStack, ScrollView, VStack, HStack, Text, TextField, SecureField, Button, Picker, modifiers, useState, useEffect, useCallback, useMemo, fetch, Script } from "scripting"
 type Gender = "女" | "男" | "不透露"
 type Mood = "开心" | "忙碌" | "疲惫" | "难过" | "生气" | "暧昧" | "相亲" | "普通"
 type Profile = { gender: Gender; age: number; mood: Mood; personality: "内向" | "外向"; tone: "温柔" | "活泼" | "成熟" | "简洁" | "土味情话" | "连环屁" }
@@ -22,6 +22,24 @@ const clampAge = (value: string) => Math.max(1, Math.min(120, Number(value) || 2
 const listModelsURL = (config: AIConfig) => config.provider === "Google Gemini"
   ? "https://generativelanguage.googleapis.com/v1beta/models"
   : config.endpoint.replace(/\/chat\/completions\/?$/, "/models")
+
+function SettingsCard({ title, detail, children }: { title: string; detail?: string; children: any }) {
+  return (
+    <VStack
+      alignment="leading"
+      spacing={10}
+      padding={14}
+      background="secondarySystemBackground"
+      modifiers={modifiers().frame({ maxWidth: "infinity" })}
+    >
+      <VStack alignment="leading" spacing={2}>
+        <Text modifiers={modifiers().font(16).bold().foregroundStyle("label")}>{title}</Text>
+        {detail ? <Text modifiers={modifiers().font(12).foregroundStyle("secondaryLabel")}>{detail}</Text> : null}
+      </VStack>
+      {children}
+    </VStack>
+  )
+}
 
 function App() {
   const dismiss = Navigation.useDismiss()
@@ -76,40 +94,54 @@ function App() {
 
   return (
     <NavigationStack>
-      <List
-        navigationTitle="智能聊天键盘"
-        navigationBarTitleDisplayMode="inline"
-        toolbar={{ topBarTrailing: <Button title="关闭" systemImage="xmark" action={dismiss} /> }}
-        modifiers={modifiers().listStyle("insetGroup")}
-      >
-        <Section header={<VStack alignment="leading" spacing={3}><Text modifiers={modifiers().font(24).bold().foregroundStyle("label")}>智能聊天键盘</Text><Text modifiers={modifiers().font(14).foregroundStyle("secondaryLabel")}>读懂上下文，帮你自然接话。</Text></VStack>}>
-          <VStack alignment="leading" spacing={4}><Text modifiers={modifiers().font(15).foregroundStyle("label")}>三条候选回复 · 仅插入，不自动发送</Text><Text modifiers={modifiers().font(13).foregroundStyle("secondaryLabel")}>粘贴多句聊天记录即可，时间文本会自动忽略。</Text></VStack>
-        </Section>
-        <Section title="回复风格">
+      <ScrollView>
+        <VStack
+          alignment="leading"
+          spacing={14}
+          padding={16}
+          background="systemBackground"
+          navigationTitle="智能聊天键盘"
+          navigationBarTitleDisplayMode="inline"
+          toolbar={{ topBarTrailing: <Button title="关闭" systemImage="xmark" action={dismiss} /> }}
+          modifiers={modifiers().frame({ maxWidth: "infinity" })}
+        >
+          <VStack alignment="leading" spacing={6} padding={18} background="#7C5CFC" modifiers={modifiers().frame({ maxWidth: "infinity" })}>
+            <Text modifiers={modifiers().font(25).bold().foregroundStyle("white")}>智能聊天键盘</Text>
+            <Text modifiers={modifiers().font(14).foregroundStyle("white")}>读懂上下文，帮你自然接话。</Text>
+            <Text modifiers={modifiers().font(12).foregroundStyle("white")}>生成三条候选 · 仅插入，不自动发送</Text>
+          </VStack>
+
+          <SettingsCard title="回复风格" detail="这些设置会同步给键盘中的回复生成。">
           <Picker title="性别" value={profile.gender} onChanged={(value: any) => saveProfile({ ...profile, gender: value as Gender })}>{(["女", "男", "不透露"] as Gender[]).map((gender) => <Text tag={gender}>{gender}</Text>)}</Picker>
           <TextField title="年龄" value={String(profile.age)} onChanged={(value) => saveProfile({ ...profile, age: clampAge(value) })} />
           <Picker title="当前状态" value={moods.indexOf(profile.mood)} onChanged={(value: any) => saveProfile({ ...profile, mood: moods[Number(value)] || "普通" })}>{moods.map((mood, index) => <Text tag={index}>{mood}</Text>)}</Picker>
           <Picker title="性格" value={profile.personality === "内向" ? 0 : 1} onChanged={(value: any) => saveProfile({ ...profile, personality: Number(value) === 0 ? "内向" : "外向" })}><Text tag={0}>内向</Text><Text tag={1}>外向</Text></Picker>
           <Picker title="表达风格" value={tones.indexOf(profile.tone)} onChanged={(value: any) => saveProfile({ ...profile, tone: tones[Number(value)] || "温柔" })}>{tones.map((tone, index) => <Text tag={index}>{tone}</Text>)}</Picker>
-        </Section>
-        <Section title="AI 服务">
+          </SettingsCard>
+
+          <SettingsCard title="AI 服务" detail="密钥保存在本机；聊天内容仅发送到你选择的服务商。">
           <Picker title="服务商" value={ai.provider} onChanged={(value: any) => changeProvider(value as AIProvider)}>{providers.map((provider) => <Text tag={provider}>{provider}</Text>)}</Picker>
           <HStack spacing={8}>{keyField}<Button title="" systemImage={showKey ? "eye" : "eye.slash"} action={() => setShowKey(!showKey)} /></HStack>
           {models.length > 0 ? <Picker title="模型（已读取）" value={ai.model} onChanged={(v: any) => saveAI({ ...ai, model: v as string })}>{models.map((model) => <Text tag={model}>{model}</Text>)}</Picker> : <TextField title="模型名称" value={ai.model} onChanged={(v) => saveAI({ ...ai, model: v })} />}
           <Button title="刷新可用模型" action={() => { void refreshModels() }} />
-          <Text>{modelNotice}</Text>
+          <Text modifiers={modifiers().font(12).foregroundStyle("secondaryLabel")}>{modelNotice}</Text>
           <TextField title="接口地址" value={ai.endpoint} onChanged={(v) => saveAI({ ...ai, endpoint: v })} />
-          <Text>API Key 仅保存在本机；发送内容会经过你选择的 AI 服务商。</Text>
-        </Section>
-        <Section title="使用说明">
+          </SettingsCard>
+
+          <SettingsCard title="快速预览" detail="在键盘内粘贴聊天记录，时间行会自动忽略。">
           <TextField title="输入一句话" prompt="例如：周五一起吃饭吗？" value={sentence} onChanged={setSentence} />
           <Button title="查看预览" action={makePreview} />
-          <Text>{preview}</Text>
-        </Section>
-        <Section title="开始使用">
-          <Text>① 开启 Scripting 键盘的“允许完全访问”</Text><Text>② 复制聊天窗口最近几句，再切换到键盘粘贴</Text><Text>③ 点击生成，选择一条插入到输入框</Text><Text modifiers={modifiers().font(12).foregroundStyle("secondaryLabel")}>聊天记录由你主动粘贴；iOS 键盘不会读取聊天 App 的历史内容。</Text>
-        </Section>
-      </List>
+          <Text modifiers={modifiers().font(13).foregroundStyle("label")}>{preview}</Text>
+          </SettingsCard>
+
+          <SettingsCard title="开始使用">
+            <Text>① 开启 Scripting 键盘的“允许完全访问”</Text>
+            <Text>② 复制聊天窗口最近几句，再切换到键盘粘贴</Text>
+            <Text>③ 点击生成，选择一条插入到输入框</Text>
+            <Text modifiers={modifiers().font(12).foregroundStyle("secondaryLabel")}>聊天记录由你主动粘贴；iOS 键盘不会读取聊天 App 的历史内容。</Text>
+          </SettingsCard>
+        </VStack>
+      </ScrollView>
     </NavigationStack>
   )
 }
