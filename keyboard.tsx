@@ -84,12 +84,16 @@ function copiedMessages(value: string): CopiedMessage[] {
 function labelledContext(value: string) {
   const copied = copiedMessages(value)
   if (copied.length) return copied.slice(-12).map((item) => `${item.sender}：${item.message}`).join("\n").slice(-MAX_CONTEXT_CHARS)
-  return transcriptLines(value).slice(-12).map((line) => {
+  const lines = transcriptLines(value)
+  const start = Math.max(0, lines.length - 12)
+  return lines.slice(start).map((line, index) => {
     const incoming = line.match(/^(对方|TA|他|她|对方说)\s*[:：]\s*(.*)$/i)
     if (incoming) return `对方：${incoming[2]}`
     const outgoing = line.match(/^(我|我说|自己|本人|me)\s*[:：]\s*(.*)$/i)
     if (outgoing) return `我：${outgoing[2]}`
-    return line
+    // For plain copied text without speaker labels, the first message is the
+    // other person's message and speakers alternate thereafter.
+    return `${(start + index) % 2 === 0 ? "对方" : "我"}：${line}`
   }).join("\n").slice(-MAX_CONTEXT_CHARS)
 }
 
@@ -104,10 +108,12 @@ function latestMessage(transcript: string, explicitMessage: string) {
     if (incoming?.message.trim()) return incoming.message.trim()
   }
   const lines = transcriptLines(transcript)
-  // Prefer an explicitly marked incoming line. If the paste has no labels, the
-  // final non-empty line is the most useful, least surprising fallback.
+  // Prefer an explicitly marked incoming line. For plain text, the first line
+  // is the other person's message and speakers alternate thereafter.
   const incoming = [...lines].reverse().find((line) => /^(对方|TA|他|她|对方说|TA说)\s*[:：]/i.test(line))
-  return (incoming || lines[lines.length - 1] || "").replace(/^(对方|TA|他|她|对方说|TA说)\s*[:：]\s*/i, "").trim()
+  if (incoming) return incoming.replace(/^(对方|TA|他|她|对方说|TA说)\s*[:：]\s*/i, "").trim()
+  if (lines.length > 1) return lines[(lines.length - 1) % 2 === 0 ? lines.length - 2 : lines.length - 1].trim()
+  return (lines[0] || "").trim()
 }
 
 function parseReplies(content: string) {
