@@ -83,7 +83,10 @@ function copiedMessages(value: string): CopiedMessage[] {
 
 function labelledContext(value: string) {
   const copied = copiedMessages(value)
-  if (copied.length) return copied.slice(-12).map((item) => `${item.sender}：${item.message}`).join("\n").slice(-MAX_CONTEXT_CHARS)
+  if (copied.length) {
+    const opponent = copied[0].sender
+    return copied.slice(-12).map((item) => `${item.sender === opponent ? "对方" : "我"}（${item.sender}）：${item.message}`).join("\n").slice(-MAX_CONTEXT_CHARS)
+  }
   const lines = transcriptLines(value)
   const start = Math.max(0, lines.length - 12)
   return lines.slice(start).map((line, index) => {
@@ -101,10 +104,10 @@ function latestMessage(transcript: string, explicitMessage: string) {
   if (explicitMessage.trim()) return explicitMessage.trim()
   const copied = copiedMessages(transcript)
   if (copied.length > 1) {
-    // When a copied selection ends with the user's own message, use the latest
-    // message from the other speaker as the incoming message to answer.
-    const lastSender = copied[copied.length - 1].sender
-    const incoming = [...copied].reverse().find((item) => item.sender !== lastSender)
+    // The first username in a copied conversation is the other person. Every
+    // later message from that username is therefore an incoming message.
+    const opponent = copied[0].sender
+    const incoming = [...copied].reverse().find((item) => item.sender === opponent)
     if (incoming?.message.trim()) return incoming.message.trim()
   }
   const lines = transcriptLines(transcript)
