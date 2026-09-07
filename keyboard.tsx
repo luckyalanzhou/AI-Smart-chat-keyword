@@ -235,7 +235,7 @@ function SmartReplyKeyboard() {
   const replyCards = useMemo(() => (
     <VStack alignment="leading" spacing={4} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
       {replies.map((reply) => (
-        <Button buttonStyle="bordered" disabled={!hasReplyResults} action={() => insert(reply)}>
+        <Button buttonStyle="glass" buttonBorderShape="roundedRectangle" controlSize="large" disabled={!hasReplyResults} action={() => insert(reply)}>
           <Text lineLimit={1} modifiers={modifiers().font(13).foregroundStyle("label").padding({ horizontal: 8, vertical: 5 }).frame({ maxWidth: "infinity" })}>{reply}</Text>
         </Button>
       ))}
@@ -253,7 +253,7 @@ function SmartReplyKeyboard() {
       <TextField textFieldStyle="roundedBorder" title="聊天上下文" prompt="粘贴最近几句；时间行会自动忽略" value={transcript} onChanged={setTranscript} />
       <HStack spacing={4} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
         <TextField textFieldStyle="roundedBorder" title="对方最后一句" prompt="可留空，自动从上下文提取" autofocus={true} value={sentence} onChanged={onSentenceChanged} modifiers={modifiers().frame({ maxWidth: "infinity" })} />
-        <Button buttonStyle="borderedProminent" action={() => { if (!busy) void generate() }}><Text>{busy ? "生成中" : "生成"}</Text></Button>
+        <Button buttonStyle="glassProminent" buttonBorderShape="roundedRectangle" action={() => { if (!busy) void generate() }}><Text>{busy ? "生成中" : "生成"}</Text></Button>
       </HStack>
       <HStack spacing={4} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
         <Text modifiers={modifiers().font(11).foregroundStyle("tertiaryLabel")}>{notice}</Text>
@@ -267,5 +267,5 @@ function SmartReplyKeyboard() {
 }
 
 // CustomKeyboard 文档建议在 keyboard.tsx 中只调用一次 present。
-CustomKeyboard.requestHeight(340)
+CustomKeyboard.requestHeight(290)
 CustomKeyboard.present(<SmartReplyKeyboard />)
