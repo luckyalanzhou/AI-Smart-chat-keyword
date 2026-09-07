@@ -235,7 +235,7 @@ function SmartReplyKeyboard() {
   const replyCards = useMemo(() => (
     <VStack alignment="leading" spacing={4} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
       {replies.map((reply) => (
-        <Button buttonStyle="glass" buttonBorderShape="roundedRectangle" controlSize="large" disabled={!hasReplyResults} action={() => insert(reply)}>
+        <Button buttonStyle={hasReplyResults ? "glass" : "bordered"} buttonBorderShape="roundedRectangle" controlSize={hasReplyResults ? "large" : "regular"} disabled={!hasReplyResults} action={() => insert(reply)}>
           <Text lineLimit={1} modifiers={modifiers().font(13).foregroundStyle("label").padding({ horizontal: 8, vertical: 5 }).frame({ maxWidth: "infinity" })}>{reply}</Text>
         </Button>
       ))}
@@ -243,7 +243,7 @@ function SmartReplyKeyboard() {
   ), [hasReplyResults, insert, replies])
 
   return (
-    <VStack alignment="leading" spacing={4} padding={{ horizontal: 8, vertical: 4 }} background="systemBackground" modifiers={modifiers().frame({ maxWidth: "infinity" })}>
+    <VStack alignment="leading" spacing={4} padding={{ horizontal: 10, vertical: 6 }} background="secondarySystemBackground" modifiers={modifiers().frame({ maxWidth: "infinity" })}>
       <HStack spacing={4} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
         <Text modifiers={modifiers().font(17).bold().foregroundStyle("label")}>智能回复</Text>
         <Text modifiers={modifiers().font(11).foregroundStyle("tertiaryLabel")}>· {profile.tone}</Text>
@@ -267,5 +267,5 @@ function SmartReplyKeyboard() {
 }
 
 // CustomKeyboard 文档建议在 keyboard.tsx 中只调用一次 present。
-CustomKeyboard.requestHeight(290)
+CustomKeyboard.requestHeight(270)
 CustomKeyboard.present(<SmartReplyKeyboard />)
