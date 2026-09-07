@@ -67,7 +67,23 @@ function transcriptLines(value: string) {
   return value.split(/\r?\n/).map((line) => line.trim()).filter((line) => line && !isTimestampLine(line))
 }
 
+type CopiedMessage = { sender: string; message: string }
+
+function copiedMessages(value: string): CopiedMessage[] {
+  const lines = value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
+  const messages: CopiedMessage[] = []
+  for (let index = 0; index + 2 < lines.length; index += 1) {
+    // Scripting/WeChat multi-select copies commonly use: sender → timestamp → message.
+    if (!isTimestampLine(lines[index + 1]) || isTimestampLine(lines[index])) continue
+    messages.push({ sender: lines[index], message: lines[index + 2] })
+    index += 2
+  }
+  return messages
+}
+
 function labelledContext(value: string) {
+  const copied = copiedMessages(value)
+  if (copied.length) return copied.slice(-12).map((item) => `${item.sender}：${item.message}`).join("\n").slice(-MAX_CONTEXT_CHARS)
   return transcriptLines(value).slice(-12).map((line) => {
     const incoming = line.match(/^(对方|TA|他|她|对方说)\s*[:：]\s*(.*)$/i)
     if (incoming) return `对方：${incoming[2]}`
@@ -79,6 +95,14 @@ function labelledContext(value: string) {
 
 function latestMessage(transcript: string, explicitMessage: string) {
   if (explicitMessage.trim()) return explicitMessage.trim()
+  const copied = copiedMessages(transcript)
+  if (copied.length > 1) {
+    // When a copied selection ends with the user's own message, use the latest
+    // message from the other speaker as the incoming message to answer.
+    const lastSender = copied[copied.length - 1].sender
+    const incoming = [...copied].reverse().find((item) => item.sender !== lastSender)
+    if (incoming?.message.trim()) return incoming.message.trim()
+  }
   const lines = transcriptLines(transcript)
   // Prefer an explicitly marked incoming line. If the paste has no labels, the
   // final non-empty line is the most useful, least surprising fallback.
