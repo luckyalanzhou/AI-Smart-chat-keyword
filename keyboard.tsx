@@ -123,6 +123,19 @@ function latestMessage(transcript: string, explicitMessage: string, opponentSend
   return (lines[0] || "").trim()
 }
 
+function dialogueBeforeReply(value: string, opponentSender?: string) {
+  const copied = copiedMessages(value)
+  if (!copied.length) return [] as Array<{ role: "user" | "assistant"; content: string }>
+  const opponent = opponentSender || copied[0].sender
+  const targetIndex = copied.map((item) => item.sender).lastIndexOf(opponent)
+  const start = Math.max(0, targetIndex - 11)
+  // The final incoming message is sent separately as the actual user turn.
+  return copied.slice(start, Math.max(start, targetIndex)).map((item) => ({
+    role: item.sender === opponent ? "user" as const : "assistant" as const,
+    content: item.message,
+  }))
+}
+
 function parseReplies(content: string) {
   const cleaned = content.replace(/```(?:json)?/gi, "").trim()
   const candidates = [cleaned.match(/\[[\s\S]*\]/)?.[0], cleaned.match(/\[[\s\S]*?\]/)?.[0]].filter(Boolean) as string[]
@@ -222,12 +235,17 @@ function SmartReplyKeyboard() {
       const roleRule = opponent ? `固定角色：用户名“${opponent}”是对方，其余用户名都是我方。绝不把我方消息当成需要回复的消息。` : ""
       const prompt = `【按时间从旧到新的对话上下文】\n${context || "（未提供，仅根据最新消息回复）"}\n\n【必须回复的对方最新消息】\n${text}\n\n【回复任务】${roleRule} 只针对上面的最新消息作答，让对方能看出你听懂了具体内容；必要时承接前文，但不要逐句复述上下文。未说明关系时保持分寸。\n用户人设：${profile.gender}，${profile.age}岁，${profile.personality}性格，当前${profile.mood}，风格${profile.tone}\n性格要求：内向就少说、少主动追问、语气克制但不冷淡；外向就自然主动、适度接话和追问，但不要过度热情。`
       const isGemini = ai.provider === "Google Gemini"
+      const structuredDialogue = dialogueBeforeReply(source, opponent)
+      const replyInstruction = `${roleRule}\n用户人设：${profile.gender}，${profile.age}岁，${profile.personality}性格，当前${profile.mood}，风格${profile.tone}。\n请只回复这条对方消息：${text}\n只输出 JSON 字符串数组。`
+      const chatMessages = structuredDialogue.length
+        ? [{ role: "system", content: SYSTEM_PROMPT }, ...structuredDialogue, { role: "user", content: replyInstruction }]
+        : [{ role: "system", content: SYSTEM_PROMPT }, { role: "user", content: prompt }]
       const baseURL = isGemini ? geminiGenerateURL(ai) : ai.endpoint.trim()
       if (!/^https:\/\//i.test(baseURL)) throw new Error("接口地址必须以 https:// 开头")
       const url = baseURL
       const body = isGemini
         ? { contents: [{ role: "user", parts: [{ text: `${SYSTEM_PROMPT}\n\n${prompt}` }] }], generationConfig: { temperature: 0.85, maxOutputTokens: 240 } }
-        : { model: ai.model.trim(), temperature: 0.85, max_tokens: 240, ...(ai.provider === "DeepSeek" ? { thinking: { type: "disabled" } } : {}), messages: [{ role: "system", content: SYSTEM_PROMPT }, { role: "user", content: prompt }] }
+        : { model: ai.model.trim(), temperature: 0.85, max_tokens: 240, ...(ai.provider === "DeepSeek" ? { thinking: { type: "disabled" } } : {}), messages: chatMessages }
       const headers = isGemini ? { "Content-Type": "application/json", "x-goog-api-key": ai.apiKey.trim() } : { "Content-Type": "application/json", "Authorization": `Bearer ${ai.apiKey.trim()}` }
       const data = await postJSON(url, headers, body, controller.signal)
       const content = isGemini ? (data?.candidates?.[0]?.content?.parts?.[0]?.text || "") : (data?.choices?.[0]?.message?.content || "")
