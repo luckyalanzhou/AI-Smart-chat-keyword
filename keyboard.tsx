@@ -104,15 +104,16 @@ function labelledContext(value: string) {
 }
 
 function latestMessage(transcript: string, explicitMessage: string) {
-  if (explicitMessage.trim()) return explicitMessage.trim()
-  const copied = copiedMessages(transcript)
-  if (copied.length > 1) {
+  const explicitCopied = copiedMessages(explicitMessage)
+  const copied = explicitCopied.length ? explicitCopied : copiedMessages(transcript)
+  if (copied.length) {
     // The first username in a copied conversation is the other person. Every
     // later message from that username is therefore an incoming message.
     const opponent = copied[0].sender
     const incoming = [...copied].reverse().find((item) => item.sender === opponent)
     if (incoming?.message.trim()) return incoming.message.trim()
   }
+  if (explicitMessage.trim()) return explicitMessage.trim()
   const lines = transcriptLines(transcript)
   // Prefer an explicitly marked incoming line. For plain text, the first line
   // is the other person's message and speakers alternate thereafter.
@@ -192,7 +193,8 @@ function SmartReplyKeyboard() {
   const [busy, setBusy] = useState(false)
 
   const generate = useCallback(async (input?: string) => {
-    const text = latestMessage(transcript, input ?? sentence)
+    const rawInput = input ?? sentence
+    const text = latestMessage(transcript, rawInput)
     if (!text) { setHasReplyResults(false); setNotice("请先点输入框，然后长按粘贴对方消息"); return }
     if (!ai.apiKey.trim()) { setHasReplyResults(false); setNotice("请先在主 App 设置 AI API Key"); return }
     if (!ai.model.trim()) { setHasReplyResults(false); setNotice("请先在主 App 设置模型名称"); return }
@@ -205,7 +207,7 @@ function SmartReplyKeyboard() {
     setRetryText("")
     setNotice("AI 正在理解这句话…")
     try {
-      const context = labelledContext(transcript)
+      const context = labelledContext(transcript.trim() ? transcript : rawInput)
       const prompt = `【按时间从旧到新的对话上下文】\n${context || "（未提供，仅根据最新消息回复）"}\n\n【必须回复的对方最新消息】\n${text}\n\n【回复任务】只针对上面的最新消息作答，让对方能看出你听懂了具体内容；必要时承接前文，但不要逐句复述上下文。未说明关系时保持分寸。\n用户人设：${profile.gender}，${profile.age}岁，${profile.personality}性格，当前${profile.mood}，风格${profile.tone}\n性格要求：内向就少说、少主动追问、语气克制但不冷淡；外向就自然主动、适度接话和追问，但不要过度热情。`
       const isGemini = ai.provider === "Google Gemini"
       const baseURL = isGemini ? geminiGenerateURL(ai) : ai.endpoint.trim()
