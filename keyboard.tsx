@@ -120,11 +120,18 @@ function latestMessage(transcript: string, explicitMessage: string) {
 }
 
 function parseReplies(content: string) {
-  const match = content.match(/\[[\s\S]*?\]/)
-  const parsed = match ? JSON.parse(match[0]) : []
-  return Array.isArray(parsed)
-    ? parsed.filter((v) => typeof v === "string" && v.trim()).map((v) => v.trim().replace(/[。！？]+$/, "")).slice(0, 3)
-    : []
+  const cleaned = content.replace(/```(?:json)?/gi, "").trim()
+  const candidates = [cleaned.match(/\[[\s\S]*\]/)?.[0], cleaned.match(/\[[\s\S]*?\]/)?.[0]].filter(Boolean) as string[]
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate)
+      if (Array.isArray(parsed)) {
+        const replies = parsed.filter((v) => typeof v === "string" && v.trim()).map((v) => v.trim().replace(/[。！？]+$/, "")).slice(0, 3)
+        if (replies.length) return replies
+      }
+    } catch { /* Try the shorter array match, then fall back to local replies. */ }
+  }
+  return []
 }
 
 const wait = (milliseconds: number) => new Promise<void>((resolve) => setTimeout(resolve, milliseconds))
@@ -182,6 +189,7 @@ function SmartReplyKeyboard() {
     const text = latestMessage(transcript, input ?? sentence)
     if (!text) { setHasReplyResults(false); setNotice("请先点输入框，然后长按粘贴对方消息"); return }
     if (!ai.apiKey.trim()) { setHasReplyResults(false); setNotice("请先在主 App 设置 AI API Key"); return }
+    if (!ai.model.trim()) { setHasReplyResults(false); setNotice("请先在主 App 设置模型名称"); return }
     const requestId = ++activeRequestId
     activeRequest?.abort()
     const controller = new AbortController()
@@ -196,11 +204,11 @@ function SmartReplyKeyboard() {
       const isGemini = ai.provider === "Google Gemini"
       const baseURL = isGemini ? geminiGenerateURL(ai) : ai.endpoint.trim()
       if (!/^https:\/\//i.test(baseURL)) throw new Error("接口地址必须以 https:// 开头")
-      const url = isGemini ? `${baseURL}${baseURL.includes("?") ? "&" : "?"}key=${encodeURIComponent(ai.apiKey.trim())}` : baseURL
+      const url = baseURL
       const body = isGemini
         ? { contents: [{ role: "user", parts: [{ text: `${SYSTEM_PROMPT}\n\n${prompt}` }] }], generationConfig: { temperature: 0.85, maxOutputTokens: 240 } }
         : { model: ai.model.trim(), temperature: 0.85, max_tokens: 240, messages: [{ role: "system", content: SYSTEM_PROMPT }, { role: "user", content: prompt }] }
-      const headers = isGemini ? { "Content-Type": "application/json" } : { "Content-Type": "application/json", "Authorization": `Bearer ${ai.apiKey.trim()}` }
+      const headers = isGemini ? { "Content-Type": "application/json", "x-goog-api-key": ai.apiKey.trim() } : { "Content-Type": "application/json", "Authorization": `Bearer ${ai.apiKey.trim()}` }
       const data = await postJSON(url, headers, body, controller.signal)
       const content = isGemini ? (data?.candidates?.[0]?.content?.parts?.[0]?.text || "") : (data?.choices?.[0]?.message?.content || "")
       const result = parseReplies(content)
@@ -216,7 +224,9 @@ function SmartReplyKeyboard() {
       setReplies(generateReplies(text, profile))
       setHasReplyResults(true)
       setRetryText(text)
-      setNotice("AI 暂不可用，已切换本地建议")
+      const detail = String(error).replace("Error: ", "")
+      const status = detail.match(/HTTP\s+\d{3}/i)?.[0] || (/network|联网|连接|internet/i.test(detail) ? "网络" : "解析")
+      setNotice(`AI 暂不可用（${status}），已切换本地建议`)
     } finally {
       if (requestId === activeRequestId) setBusy(false)
     }

@@ -67,12 +67,15 @@ function App() {
     Storage.set("ai", next, { shared: true })
   }, [])
   const refreshModels = useCallback(async () => {
-    if (!ai.apiKey.trim()) { setModelNotice("请先填写 API Key"); return }
+    // Read the just-saved shared config so a provider switch never uses the
+    // previous provider's endpoint or model while the state update is pending.
+    const config = Storage.get<AIConfig>("ai", { shared: true }) || ai
+    if (!config.apiKey.trim()) { setModelNotice("请先填写 API Key"); return }
     setModelNotice("正在读取最新模型…")
     try {
-      const gemini = ai.provider === "Google Gemini"
-      const url = gemini ? `${listModelsURL(ai)}?key=${encodeURIComponent(ai.apiKey.trim())}` : listModelsURL(ai)
-      const response = await fetch(url, { headers: gemini ? {} : { Authorization: `Bearer ${ai.apiKey.trim()}` } })
+      const gemini = config.provider === "Google Gemini"
+      const url = listModelsURL(config)
+      const response = await fetch(url, { headers: gemini ? { "x-goog-api-key": config.apiKey.trim() } : { Authorization: `Bearer ${config.apiKey.trim()}` } })
       const data = await response.json()
       if (!response.ok) throw new Error(data?.error?.message || `HTTP ${response.status}`)
       const values = gemini
@@ -80,7 +83,7 @@ function App() {
         : (Array.isArray(data?.data) ? data.data.map((m: any) => String(m.id || "")).filter((m: string) => m) : [])
       if (!values.length) throw new Error("没有读取到模型")
       setModels(values)
-      if (!values.includes(ai.model)) saveAI({ ...ai, model: values[0] })
+      if (!values.includes(config.model)) saveAI({ ...config, model: values[0] })
       setModelNotice(`已读取 ${values.length} 个可用模型`)
     } catch (error) { setModels([]); setModelNotice(`读取失败：${String(error).replace("Error: ", "")}`) }
   }, [ai, saveAI])
