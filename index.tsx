@@ -9,7 +9,7 @@ type AIProvider = "OpenAI" | "DeepSeek" | "通义千问" | "智谱AI" | "月之�
 type AIConfig = { provider: AIProvider; endpoint: string; model: string; apiKey: string }
 const providerDefaults: Record<AIProvider, { endpoint: string; model: string }> = {
   "OpenAI": { endpoint: "https://api.openai.com/v1/chat/completions", model: "gpt-4o-mini" },
-  "DeepSeek": { endpoint: "https://api.deepseek.com/chat/completions", model: "deepseek-chat" },
+  "DeepSeek": { endpoint: "https://api.deepseek.com/chat/completions", model: "deepseek-v4-flash" },
   "通义千问": { endpoint: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions", model: "qwen-turbo" },
   "智谱AI": { endpoint: "https://open.bigmodel.cn/api/paas/v4/chat/completions", model: "glm-4-flash" },
   "月之暗面": { endpoint: "https://api.moonshot.cn/v1/chat/completions", model: "moonshot-v1-8k" },
@@ -17,6 +17,9 @@ const providerDefaults: Record<AIProvider, { endpoint: string; model: string }> 
   "自定义兼容接口": { endpoint: "https://api.openai.com/v1/chat/completions", model: "" }
 }
 const defaultAI: AIConfig = { provider: "OpenAI", ...providerDefaults.OpenAI, apiKey: "" }
+const normalizeAI = (config: AIConfig): AIConfig => config.provider === "DeepSeek" && ["deepseek-chat", "deepseek-reasoner"].includes(config.model)
+  ? { ...config, model: "deepseek-v4-flash" }
+  : config
 const providers = Object.keys(providerDefaults) as AIProvider[]
 const clampAge = (value: string) => Math.max(1, Math.min(120, Number(value) || 25))
 const listModelsURL = (config: AIConfig) => config.provider === "Google Gemini"
@@ -54,10 +57,13 @@ function StatusItem({ title, value, active }: { title: string; value: string; ac
 function App() {
   const dismiss = Navigation.useDismiss()
   const [profile, setProfile] = useState<Profile>((Storage.get<Profile>("profile", { shared: true }) || defaultProfile))
-  const [ai, setAI] = useState<AIConfig>(Storage.get<AIConfig>("ai", { shared: true }) || defaultAI)
+  const storedAI = Storage.get<AIConfig>("ai", { shared: true }) || defaultAI
+  const initialAI = normalizeAI(storedAI)
+  const [ai, setAI] = useState<AIConfig>(initialAI)
   const [showKey, setShowKey] = useState(false)
   const [models, setModels] = useState<string[]>([])
   const [modelNotice, setModelNotice] = useState("填写 API Key 后会自动读取可用模型")
+  useEffect(() => { if (initialAI.model !== storedAI.model) Storage.set("ai", initialAI, { shared: true }) }, [])
   const saveProfile = useCallback((next: Profile) => {
     setProfile(next)
     Storage.set("profile", next, { shared: true })

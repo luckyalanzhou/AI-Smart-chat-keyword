@@ -1,4 +1,4 @@
-import { VStack, HStack, Spacer, Text, TextField, Button, modifiers, useState, useCallback, useMemo, fetch } from "scripting"
+import { VStack, HStack, Spacer, Text, TextField, Button, modifiers, useState, useEffect, useCallback, useMemo, fetch } from "scripting"
 type Gender = "女" | "男" | "不透露"
 type Mood = "开心" | "忙碌" | "疲惫" | "难过" | "生气" | "暧昧" | "相亲" | "普通"
 type Profile = {
@@ -13,7 +13,7 @@ type AIProvider = "OpenAI" | "DeepSeek" | "通义千问" | "智谱AI" | "月之�
 type AIConfig = { provider: AIProvider; endpoint: string; model: string; apiKey: string }
 const providerDefaults: Record<AIProvider, { endpoint: string; model: string }> = {
   "OpenAI": { endpoint: "https://api.openai.com/v1/chat/completions", model: "gpt-4o-mini" },
-  "DeepSeek": { endpoint: "https://api.deepseek.com/chat/completions", model: "deepseek-chat" },
+  "DeepSeek": { endpoint: "https://api.deepseek.com/chat/completions", model: "deepseek-v4-flash" },
   "通义千问": { endpoint: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions", model: "qwen-turbo" },
   "智谱AI": { endpoint: "https://open.bigmodel.cn/api/paas/v4/chat/completions", model: "glm-4-flash" },
   "月之暗面": { endpoint: "https://api.moonshot.cn/v1/chat/completions", model: "moonshot-v1-8k" },
@@ -21,6 +21,9 @@ const providerDefaults: Record<AIProvider, { endpoint: string; model: string }> 
   "自定义兼容接口": { endpoint: "https://api.openai.com/v1/chat/completions", model: "" }
 }
 const defaultAI: AIConfig = { provider: "OpenAI", ...providerDefaults.OpenAI, apiKey: "" }
+const normalizeAI = (config: AIConfig): AIConfig => config.provider === "DeepSeek" && ["deepseek-chat", "deepseek-reasoner"].includes(config.model)
+  ? { ...config, model: "deepseek-v4-flash" }
+  : config
 const defaultProfile: Profile = { gender: "不透露", age: 25, mood: "普通", personality: "外向", tone: "温柔" }
 
 function generateReplies(sentence: string, profile: Profile): string[] {
@@ -174,8 +177,11 @@ function geminiGenerateURL(config: AIConfig) {
 
 function SmartReplyKeyboard() {
   const stored = Storage.get<Profile>("profile", { shared: true }) || defaultProfile
+  const storedAI = Storage.get<AIConfig>("ai", { shared: true }) || defaultAI
+  const initialAI = normalizeAI(storedAI)
   const [profile] = useState<Profile>(stored)
-  const [ai] = useState<AIConfig>(Storage.get<AIConfig>("ai", { shared: true }) || defaultAI)
+  const [ai] = useState<AIConfig>(initialAI)
+  useEffect(() => { if (initialAI.model !== storedAI.model) Storage.set("ai", initialAI, { shared: true }) }, [])
   const [sentence, setSentence] = useState("")
   const [lastInputLength, setLastInputLength] = useState(0)
   const [transcript, setTranscript] = useState("")
