@@ -84,10 +84,10 @@ function copiedMessages(value: string): CopiedMessage[] {
   return messages
 }
 
-function labelledContext(value: string) {
+function labelledContext(value: string, opponentSender?: string) {
   const copied = copiedMessages(value)
   if (copied.length) {
-    const opponent = copied[0].sender
+    const opponent = opponentSender || copied[0].sender
     return copied.slice(-12).map((item) => `${item.sender === opponent ? "对方" : "我"}（${item.sender}）：${item.message}`).join("\n").slice(-MAX_CONTEXT_CHARS)
   }
   const lines = transcriptLines(value)
@@ -103,13 +103,13 @@ function labelledContext(value: string) {
   }).join("\n").slice(-MAX_CONTEXT_CHARS)
 }
 
-function latestMessage(transcript: string, explicitMessage: string) {
+function latestMessage(transcript: string, explicitMessage: string, opponentSender?: string) {
   const explicitCopied = copiedMessages(explicitMessage)
   const copied = explicitCopied.length ? explicitCopied : copiedMessages(transcript)
   if (copied.length) {
     // The first username in a copied conversation is the other person. Every
     // later message from that username is therefore an incoming message.
-    const opponent = copied[0].sender
+    const opponent = opponentSender || copied[0].sender
     const incoming = [...copied].reverse().find((item) => item.sender === opponent)
     if (incoming?.message.trim()) return incoming.message.trim()
   }
@@ -186,15 +186,26 @@ function SmartReplyKeyboard() {
   const [sentence, setSentence] = useState("")
   const [lastInputLength, setLastInputLength] = useState(0)
   const [transcript, setTranscript] = useState("")
+  const [selectedOpponent, setSelectedOpponent] = useState("")
   const [replies, setReplies] = useState<string[]>(["先粘贴对方消息", "再点击生成回复", "点选即可插入"])
   const [hasReplyResults, setHasReplyResults] = useState(false)
   const [notice, setNotice] = useState("点输入框后长按粘贴对方消息")
   const [retryText, setRetryText] = useState("")
   const [busy, setBusy] = useState(false)
+  const senderOptions = useMemo(() => {
+    const source = transcript.trim() ? transcript : sentence
+    return [...new Set(copiedMessages(source).map((item) => item.sender))]
+  }, [sentence, transcript])
+  const activeOpponent = selectedOpponent && senderOptions.includes(selectedOpponent) ? selectedOpponent : senderOptions[0]
 
   const generate = useCallback(async (input?: string) => {
     const rawInput = input ?? sentence
-    const text = latestMessage(transcript, rawInput)
+    const rawCopied = copiedMessages(rawInput)
+    const source = rawCopied.length || !transcript.trim() ? rawInput : transcript
+    const sourceMessages = copiedMessages(source)
+    const senders = [...new Set(sourceMessages.map((item) => item.sender))]
+    const opponent = selectedOpponent && senders.includes(selectedOpponent) ? selectedOpponent : senders[0]
+    const text = latestMessage(transcript, rawInput, opponent)
     if (!text) { setHasReplyResults(false); setNotice("请先点输入框，然后长按粘贴对方消息"); return }
     if (!ai.apiKey.trim()) { setHasReplyResults(false); setNotice("请先在主 App 设置 AI API Key"); return }
     if (!ai.model.trim()) { setHasReplyResults(false); setNotice("请先在主 App 设置模型名称"); return }
@@ -207,8 +218,9 @@ function SmartReplyKeyboard() {
     setRetryText("")
     setNotice("AI 正在理解这句话…")
     try {
-      const context = labelledContext(transcript.trim() ? transcript : rawInput)
-      const prompt = `【按时间从旧到新的对话上下文】\n${context || "（未提供，仅根据最新消息回复）"}\n\n【必须回复的对方最新消息】\n${text}\n\n【回复任务】只针对上面的最新消息作答，让对方能看出你听懂了具体内容；必要时承接前文，但不要逐句复述上下文。未说明关系时保持分寸。\n用户人设：${profile.gender}，${profile.age}岁，${profile.personality}性格，当前${profile.mood}，风格${profile.tone}\n性格要求：内向就少说、少主动追问、语气克制但不冷淡；外向就自然主动、适度接话和追问，但不要过度热情。`
+      const context = labelledContext(source, opponent)
+      const roleRule = opponent ? `固定角色：用户名“${opponent}”是对方，其余用户名都是我方。绝不把我方消息当成需要回复的消息。` : ""
+      const prompt = `【按时间从旧到新的对话上下文】\n${context || "（未提供，仅根据最新消息回复）"}\n\n【必须回复的对方最新消息】\n${text}\n\n【回复任务】${roleRule} 只针对上面的最新消息作答，让对方能看出你听懂了具体内容；必要时承接前文，但不要逐句复述上下文。未说明关系时保持分寸。\n用户人设：${profile.gender}，${profile.age}岁，${profile.personality}性格，当前${profile.mood}，风格${profile.tone}\n性格要求：内向就少说、少主动追问、语气克制但不冷淡；外向就自然主动、适度接话和追问，但不要过度热情。`
       const isGemini = ai.provider === "Google Gemini"
       const baseURL = isGemini ? geminiGenerateURL(ai) : ai.endpoint.trim()
       if (!/^https:\/\//i.test(baseURL)) throw new Error("接口地址必须以 https:// 开头")
@@ -238,7 +250,7 @@ function SmartReplyKeyboard() {
     } finally {
       if (requestId === activeRequestId) setBusy(false)
     }
-  }, [ai, profile, sentence, transcript])
+  }, [ai, profile, selectedOpponent, sentence, transcript])
   const onSentenceChanged = useCallback((value: string) => {
     setSentence(value)
     // 粘贴通常会一次增加多个字符；普通逐字输入不会自动请求，避免浪费 API。
@@ -266,6 +278,7 @@ function SmartReplyKeyboard() {
         <Text modifiers={modifiers().font(17).bold().foregroundStyle("label")}>智能回复</Text>
         <Text modifiers={modifiers().font(11).foregroundStyle("tertiaryLabel")}>· {profile.tone}</Text>
         <Spacer />
+        {activeOpponent ? <Button buttonStyle="plain" action={() => { const index = senderOptions.indexOf(activeOpponent); setSelectedOpponent(senderOptions[(index + 1) % senderOptions.length]) }}><Text modifiers={modifiers().font(10).foregroundStyle("tint")}>对方：{activeOpponent.slice(0, 6)}{activeOpponent.length > 6 ? "…" : ""}</Text></Button> : null}
         <Button buttonStyle="plain" action={() => CustomKeyboard.dismiss()}><Text modifiers={modifiers().font(12).foregroundStyle("secondaryLabel").padding({ horizontal: 7, vertical: 4 })}>完成</Text></Button>
       </HStack>
       <TextField textFieldStyle="roundedBorder" title="聊天上下文" prompt="粘贴最近几句；时间行会自动忽略" value={transcript} onChanged={setTranscript} />
@@ -277,7 +290,7 @@ function SmartReplyKeyboard() {
         <Text modifiers={modifiers().font(11).foregroundStyle("tertiaryLabel")}>{notice}</Text>
         <Spacer />
         {retryText ? <Button buttonStyle="plain" action={() => { if (!busy) void generate(retryText) }}><Text modifiers={modifiers().font(11).foregroundStyle("tint")}>重试</Text></Button> : null}
-        <Button buttonStyle="plain" action={() => { activeRequest?.abort(); activeRequestId++; setSentence(""); setTranscript(""); setLastInputLength(0); setRetryText(""); setHasReplyResults(false); setReplies(["先粘贴对方消息", "再点击生成回复", "点选即可插入"]); setNotice("已清空") }}><Text modifiers={modifiers().font(11).foregroundStyle("secondaryLabel")}>清空</Text></Button>
+        <Button buttonStyle="plain" action={() => { activeRequest?.abort(); activeRequestId++; setSentence(""); setTranscript(""); setSelectedOpponent(""); setLastInputLength(0); setRetryText(""); setHasReplyResults(false); setReplies(["先粘贴对方消息", "再点击生成回复", "点选即可插入"]); setNotice("已清空") }}><Text modifiers={modifiers().font(11).foregroundStyle("secondaryLabel")}>清空</Text></Button>
       </HStack>
       {replyCards}
     </VStack>
