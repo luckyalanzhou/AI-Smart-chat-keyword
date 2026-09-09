@@ -196,7 +196,9 @@ function SmartReplyKeyboard() {
   const inputBackground = { style: { light: "#F8F9FC", dark: "#18191D" }, shape: { type: "rect", cornerRadius: 10 } }
   const borderColor = { light: "rgba(44,56,76,0.18)", dark: "rgba(255,255,255,0.20)" }
   const roundedBorder = (cornerRadius: number) => <RoundedRectangle cornerRadius={cornerRadius} stroke={{ shapeStyle: borderColor, strokeStyle: { lineWidth: 1 } }} />
-  const keyboardBackground = { light: "#EEF1F6", dark: "#15161A" }
+  // Match the host keyboard's adaptive system surface instead of approximating it
+  // with a fixed blue-gray color.
+  const keyboardBackground = "secondarySystemBackground"
   const stored = Storage.get<Profile>("profile", { shared: true }) || defaultProfile
   const storedAI = Storage.get<AIConfig>("ai", { shared: true }) || defaultAI
   const initialAI = normalizeAI(storedAI)
