@@ -56,22 +56,6 @@ function SettingsCard({ title, detail, eyebrow, children }: { title: string; det
   )
 }
 
-function StatusItem({ title, value, active }: { title: string; value: string; active: boolean }) {
-  return (
-    <VStack
-      alignment="leading"
-      spacing={3}
-      padding={{ horizontal: 11, vertical: 10 }}
-      glassEffect={{ type: "rect", cornerRadius: 16 }}
-      overlay={glassBorder(16)}
-      modifiers={modifiers().frame({ maxWidth: "infinity" })}
-    >
-      <Text modifiers={modifiers().font(10).foregroundStyle("secondaryLabel")}>{title}</Text>
-      <Text modifiers={modifiers().font(12).bold().foregroundStyle(active ? "label" : "tertiaryLabel")}>{value}</Text>
-    </VStack>
-  )
-}
-
 function App() {
   const dismiss = Navigation.useDismiss()
   const [profile, setProfile] = useState<Profile>((Storage.get<Profile>("profile", { shared: true }) || defaultProfile))
@@ -116,7 +100,6 @@ function App() {
     setModelNotice("正在准备读取模型…")
     saveAI({ ...ai, provider, ...providerDefaults[provider] })
   }, [ai, saveAI])
-  const isReady = Boolean(ai.apiKey.trim() && ai.endpoint.trim() && ai.model.trim())
   const keyField = useMemo(
     () => showKey
       ? <TextField title="API Key" prompt="粘贴服务商提供的密钥" value={ai.apiKey} onChanged={(value) => saveAI({ ...ai, apiKey: value })} />
@@ -138,26 +121,6 @@ function App() {
           toolbar={{ topBarTrailing: <Button title="关闭" systemImage="xmark" action={dismiss} /> }}
           modifiers={modifiers().frame({ maxWidth: "infinity" })}
         >
-          <VStack
-            alignment="leading"
-            spacing={8}
-            padding={22}
-            glassEffect={{ type: "rect", cornerRadius: 30 }}
-            overlay={glassBorder(30)}
-            modifiers={modifiers().frame({ maxWidth: "infinity" })}
-          >
-            <Text modifiers={modifiers().font(28).bold().foregroundStyle("label")}>智能回复</Text>
-            <Text modifiers={modifiers().font(14).foregroundStyle(isReady ? "tint" : "secondaryLabel")}>{isReady ? "已准备就绪" : "完成 AI 配置后即可使用"}</Text>
-          </VStack>
-
-          <SettingsCard eyebrow="状态" title={isReady ? "已准备就绪" : "等待配置"}>
-            <HStack spacing={8} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
-              <StatusItem title="AI 服务" value={ai.provider} active={Boolean(ai.apiKey.trim())} />
-              <StatusItem title="回复风格" value={profile.tone} active={true} />
-              <StatusItem title="发送方式" value="手动确认" active={true} />
-            </HStack>
-          </SettingsCard>
-
           <SettingsCard eyebrow="01" title="回复风格">
           <Picker title="性别" value={profile.gender} onChanged={(value: any) => saveProfile({ ...profile, gender: value as Gender })}>{(["女", "男", "不透露"] as Gender[]).map((gender) => <Text tag={gender}>{gender}</Text>)}</Picker>
           <TextField title="年龄" value={String(profile.age)} onChanged={(value) => saveProfile({ ...profile, age: clampAge(value) })} />
