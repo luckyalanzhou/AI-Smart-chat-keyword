@@ -115,7 +115,7 @@ function App() {
           alignment="leading"
           spacing={16}
           padding={{ horizontal: 16, vertical: 20 }}
-          background="systemGroupedBackground"
+          background="systemBackground"
           navigationTitle="智能聊天键盘"
           navigationBarTitleDisplayMode="inline"
           toolbar={{ topBarTrailing: <Button title="关闭" systemImage="xmark" action={dismiss} /> }}
