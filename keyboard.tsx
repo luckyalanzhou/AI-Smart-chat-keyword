@@ -1,4 +1,4 @@
-import { VStack, HStack, Spacer, Text, TextField, Button, modifiers, useState, useEffect, useCallback, useMemo, fetch } from "scripting"
+import { ZStack, VStack, HStack, Spacer, Text, TextField, Button, modifiers, useState, useEffect, useCallback, useMemo, fetch } from "scripting"
 type Gender = "女" | "男" | "不透露"
 type Mood = "开心" | "忙碌" | "疲惫" | "难过" | "生气" | "暧昧" | "相亲" | "普通"
 type Profile = {
@@ -190,8 +190,9 @@ function geminiGenerateURL(config: AIConfig) {
 }
 
 function SmartReplyKeyboard() {
-  const cardBackground = { style: { light: "#EEF1F6", dark: "#232429" }, shape: { type: "rect", cornerRadius: 18 } }
-  const mutedCardBackground = { style: { light: "#E3E8F1", dark: "#2B2D33" }, shape: { type: "rect", cornerRadius: 16 } }
+  const cardBackground = { style: { light: "ultraThinMaterial", dark: "thinMaterial" }, shape: { type: "rect", cornerRadius: 18 } }
+  const mutedCardBackground = { style: { light: "thinMaterial", dark: "regularMaterial" }, shape: { type: "rect", cornerRadius: 16 } }
+  const keyboardMaterial = { light: "ultraThinMaterial", dark: "regularMaterial" }
   const keyboardBackground = {
     light: {
       gradient: [
@@ -314,6 +315,7 @@ function SmartReplyKeyboard() {
   ), [hasReplyResults, insert, replies])
 
   return (
+    <ZStack background={keyboardMaterial} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
     <VStack alignment="leading" spacing={7} padding={{ horizontal: 12, vertical: 8 }} background={keyboardBackground} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
       <HStack spacing={7} padding={{ horizontal: 12, vertical: 8 }} background={cardBackground} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
         <Text modifiers={modifiers().font(17).bold().foregroundStyle("label")}>智能回复</Text>
@@ -337,6 +339,7 @@ function SmartReplyKeyboard() {
       </HStack>
       {replyCards}
     </VStack>
+    </ZStack>
   )
 }
 
