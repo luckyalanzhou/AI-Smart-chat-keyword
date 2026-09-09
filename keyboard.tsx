@@ -1,4 +1,4 @@
-import { ZStack, VStack, HStack, Spacer, Text, TextField, Button, modifiers, useState, useEffect, useCallback, useMemo, fetch } from "scripting"
+import { VStack, HStack, Spacer, Text, TextField, Button, modifiers, useState, useEffect, useCallback, useMemo, fetch } from "scripting"
 type Gender = "女" | "男" | "不透露"
 type Mood = "开心" | "忙碌" | "疲惫" | "难过" | "生气" | "暧昧" | "相亲" | "普通"
 type Profile = {
@@ -190,25 +190,11 @@ function geminiGenerateURL(config: AIConfig) {
 }
 
 function SmartReplyKeyboard() {
-  const cardBackground = { style: { light: "ultraThinMaterial", dark: "thinMaterial" }, shape: { type: "rect", cornerRadius: 18 } }
-  const mutedCardBackground = { style: { light: "thinMaterial", dark: "regularMaterial" }, shape: { type: "rect", cornerRadius: 16 } }
-  const keyboardMaterial = { light: "ultraThinMaterial", dark: "regularMaterial" }
-  const keyboardBackground = {
-    light: {
-      gradient: [
-        { color: "rgba(248,250,255,0.20)", location: 0 },
-        { color: "rgba(225,232,244,0.82)", location: 0.5 },
-        { color: "rgba(221,228,240,0.18)", location: 1 }
-      ], startPoint: { x: 0, y: 0 }, endPoint: { x: 0, y: 1 }
-    },
-    dark: {
-      gradient: [
-        { color: "rgba(55,61,76,0.20)", location: 0 },
-        { color: "rgba(36,41,53,0.84)", location: 0.5 },
-        { color: "rgba(18,21,29,0.18)", location: 1 }
-      ], startPoint: { x: 0, y: 0 }, endPoint: { x: 0, y: 1 }
-    }
-  }
+  const cardBackground = { style: { light: "#FFFFFF", dark: "#202126" }, shape: { type: "rect", cornerRadius: 18 } }
+  const mutedCardBackground = { style: { light: "#F4F6FA", dark: "#282A30" }, shape: { type: "rect", cornerRadius: 16 } }
+  const inputBackground = { style: { light: "#F8F9FC", dark: "#18191D" }, shape: { type: "rect", cornerRadius: 12 } }
+  const borderStyle = { style: { light: "rgba(44,56,76,0.18)", dark: "rgba(255,255,255,0.20)" }, width: 1 }
+  const keyboardBackground = { light: "#EEF1F6", dark: "#15161A" }
   const stored = Storage.get<Profile>("profile", { shared: true }) || defaultProfile
   const storedAI = Storage.get<AIConfig>("ai", { shared: true }) || defaultAI
   const initialAI = normalizeAI(storedAI)
@@ -308,25 +294,24 @@ function SmartReplyKeyboard() {
       ))}
     </VStack>
   ) : (
-    <VStack alignment="leading" spacing={2} padding={{ horizontal: 12, vertical: 10 }} background={mutedCardBackground} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
+    <VStack alignment="leading" spacing={2} padding={{ horizontal: 12, vertical: 10 }} background={mutedCardBackground} border={borderStyle} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
       <Text modifiers={modifiers().font(13).bold().foregroundStyle("secondaryLabel")}>准备生成回复</Text>
       <Text modifiers={modifiers().font(11).foregroundStyle("tertiaryLabel")}>粘贴聊天内容后，生成三条可选回复</Text>
     </VStack>
   ), [hasReplyResults, insert, replies])
 
   return (
-    <ZStack background={keyboardMaterial} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
     <VStack alignment="leading" spacing={7} padding={{ horizontal: 12, vertical: 8 }} background={keyboardBackground} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
-      <HStack spacing={7} padding={{ horizontal: 12, vertical: 8 }} background={cardBackground} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
+      <HStack spacing={7} padding={{ horizontal: 12, vertical: 8 }} background={cardBackground} border={borderStyle} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
         <Text modifiers={modifiers().font(17).bold().foregroundStyle("label")}>智能回复</Text>
         <Text modifiers={modifiers().font(11).foregroundStyle("secondaryLabel")}>{profile.tone}</Text>
         <Spacer />
         {activeOpponent ? <Button buttonStyle="plain" action={() => { const index = senderOptions.indexOf(activeOpponent); setSelectedOpponent(senderOptions[(index + 1) % senderOptions.length]) }}><Text modifiers={modifiers().font(10).foregroundStyle("tint")}>对方：{activeOpponent.slice(0, 6)}{activeOpponent.length > 6 ? "…" : ""}</Text></Button> : null}
         <Button buttonStyle="plain" action={() => CustomKeyboard.dismiss()}><Text modifiers={modifiers().font(12).foregroundStyle("secondaryLabel").padding({ horizontal: 7, vertical: 4 })}>完成</Text></Button>
       </HStack>
-      <VStack alignment="leading" spacing={6} padding={10} background={cardBackground} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
-      <TextField textFieldStyle="plain" title="聊天上下文" prompt="粘贴最近几句；时间行会自动忽略" value={transcript} onChanged={setTranscript} />
-      <HStack spacing={5} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
+      <VStack alignment="leading" spacing={6} padding={10} background={cardBackground} border={borderStyle} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
+      <TextField textFieldStyle="plain" title="聊天上下文" prompt="粘贴最近几句；时间行会自动忽略" value={transcript} onChanged={setTranscript} padding={{ horizontal: 8, vertical: 6 }} background={inputBackground} border={borderStyle} />
+      <HStack spacing={5} padding={{ horizontal: 8, vertical: 4 }} background={inputBackground} border={borderStyle} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
         <TextField textFieldStyle="plain" title="对方最后一句" prompt="可留空，自动从上下文提取" autofocus={true} value={sentence} onChanged={onSentenceChanged} modifiers={modifiers().frame({ maxWidth: "infinity" })} />
         <Button buttonStyle="borderedProminent" tint="blue" buttonBorderShape={{ roundedRectangleRadius: 14 }} action={() => { if (!busy) void generate() }}><Text modifiers={modifiers().bold()}>{busy ? "生成中" : "生成"}</Text></Button>
       </HStack>
@@ -339,7 +324,6 @@ function SmartReplyKeyboard() {
       </HStack>
       {replyCards}
     </VStack>
-    </ZStack>
   )
 }
 
