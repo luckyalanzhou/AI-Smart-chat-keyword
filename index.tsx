@@ -30,7 +30,7 @@ const glassBorder = (cornerRadius: number) => (
   <RoundedRectangle
     cornerRadius={cornerRadius}
     stroke={{
-      shapeStyle: { light: "rgba(255,255,255,0.72)", dark: "rgba(255,255,255,0.20)" },
+      shapeStyle: { light: "rgba(60,60,67,0.18)", dark: "rgba(255,255,255,0.20)" },
       strokeStyle: { lineWidth: 1 },
     }}
   />
