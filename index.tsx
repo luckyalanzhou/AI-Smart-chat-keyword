@@ -1,4 +1,4 @@
-import { Navigation, NavigationStack, ScrollView, VStack, HStack, Text, TextField, SecureField, Button, Picker, modifiers, useState, useEffect, useCallback, useMemo, fetch, Script } from "scripting"
+import { Navigation, NavigationStack, ScrollView, VStack, HStack, Text, TextField, SecureField, Button, Picker, RoundedRectangle, modifiers, useState, useEffect, useCallback, useMemo, fetch, Script } from "scripting"
 type Gender = "女" | "男" | "不透露"
 type Mood = "开心" | "忙碌" | "疲惫" | "难过" | "生气" | "暧昧" | "相亲" | "普通"
 type Profile = { gender: Gender; age: number; mood: Mood; personality: "内向" | "外向"; tone: "温柔" | "活泼" | "成熟" | "简洁" | "土味情话" | "连环屁" }
@@ -26,13 +26,24 @@ const listModelsURL = (config: AIConfig) => config.provider === "Google Gemini"
   ? "https://generativelanguage.googleapis.com/v1beta/models"
   : config.endpoint.replace(/\/chat\/completions\/?$/, "/models")
 
+const glassBorder = (cornerRadius: number) => (
+  <RoundedRectangle
+    cornerRadius={cornerRadius}
+    stroke={{
+      shapeStyle: { light: "rgba(255,255,255,0.72)", dark: "rgba(255,255,255,0.20)" },
+      strokeStyle: { lineWidth: 1 },
+    }}
+  />
+)
+
 function SettingsCard({ title, detail, eyebrow, children }: { title: string; detail?: string; eyebrow?: string; children: any }) {
   return (
     <VStack
       alignment="leading"
-      spacing={12}
-      padding={14}
-      background="secondarySystemBackground"
+      spacing={13}
+      padding={18}
+      glassEffect={{ type: "rect", cornerRadius: 24 }}
+      overlay={glassBorder(24)}
       modifiers={modifiers().frame({ maxWidth: "infinity" })}
     >
       <VStack alignment="leading" spacing={3}>
@@ -47,7 +58,14 @@ function SettingsCard({ title, detail, eyebrow, children }: { title: string; det
 
 function StatusItem({ title, value, active }: { title: string; value: string; active: boolean }) {
   return (
-    <VStack alignment="leading" spacing={2} padding={{ horizontal: 10, vertical: 8 }} background="tertiarySystemBackground" modifiers={modifiers().frame({ maxWidth: "infinity" })}>
+    <VStack
+      alignment="leading"
+      spacing={3}
+      padding={{ horizontal: 11, vertical: 10 }}
+      glassEffect={{ type: "rect", cornerRadius: 16 }}
+      overlay={glassBorder(16)}
+      modifiers={modifiers().frame({ maxWidth: "infinity" })}
+    >
       <Text modifiers={modifiers().font(10).foregroundStyle("secondaryLabel")}>{title}</Text>
       <Text modifiers={modifiers().font(12).bold().foregroundStyle(active ? "label" : "tertiaryLabel")}>{value}</Text>
     </VStack>
@@ -112,19 +130,26 @@ function App() {
       <ScrollView>
         <VStack
           alignment="leading"
-          spacing={14}
-          padding={16}
-          background="systemBackground"
+          spacing={16}
+          padding={{ horizontal: 16, vertical: 20 }}
+          background="systemGroupedBackground"
           navigationTitle="智能聊天键盘"
           navigationBarTitleDisplayMode="inline"
           toolbar={{ topBarTrailing: <Button title="关闭" systemImage="xmark" action={dismiss} /> }}
           modifiers={modifiers().frame({ maxWidth: "infinity" })}
         >
-          <VStack alignment="leading" spacing={7} padding={18} background="#5B5BD6" modifiers={modifiers().frame({ maxWidth: "infinity" })}>
-            <Text modifiers={modifiers().font(11).bold().foregroundStyle("white")}>AI REPLY KEYBOARD</Text>
-            <Text modifiers={modifiers().font(26).bold().foregroundStyle("white")}>自然地接上每句话</Text>
-            <Text modifiers={modifiers().font(14).foregroundStyle("white")}>理解你主动粘贴的上下文，生成三条可编辑候选。</Text>
-            <Text modifiers={modifiers().font(12).foregroundStyle("white")}>{isReady ? "已准备就绪 · 键盘内直接生成" : "还差一步 · 配置 AI 服务后即可使用"}</Text>
+          <VStack
+            alignment="leading"
+            spacing={8}
+            padding={22}
+            glassEffect={{ type: "rect", cornerRadius: 30 }}
+            overlay={glassBorder(30)}
+            modifiers={modifiers().frame({ maxWidth: "infinity" })}
+          >
+            <Text modifiers={modifiers().font(11).bold().foregroundStyle("tint")}>AI REPLY KEYBOARD</Text>
+            <Text modifiers={modifiers().font(28).bold().foregroundStyle("label")}>自然地接上每句话</Text>
+            <Text modifiers={modifiers().font(14).foregroundStyle("secondaryLabel")}>粘贴聊天上下文，生成三条可编辑候选。</Text>
+            <Text modifiers={modifiers().font(12).foregroundStyle(isReady ? "tint" : "secondaryLabel")}>{isReady ? "已准备就绪 · 键盘内直接生成" : "还差一步 · 配置 AI 服务后即可使用"}</Text>
           </VStack>
 
           <SettingsCard eyebrow="当前状态" title={isReady ? "键盘已准备就绪" : "等待完成服务配置"} detail={isReady ? "设置会自动保存。切换到键盘后，粘贴聊天上下文即可生成。" : "填写 API Key 和模型名称后，键盘才能生成回复。"}>
@@ -147,7 +172,7 @@ function App() {
           <Picker title="服务商" value={ai.provider} onChanged={(value: any) => changeProvider(value as AIProvider)}>{providers.map((provider) => <Text tag={provider}>{provider}</Text>)}</Picker>
           <HStack spacing={8}>{keyField}<Button title="" systemImage={showKey ? "eye" : "eye.slash"} action={() => setShowKey(!showKey)} /></HStack>
           {models.length > 0 ? <Picker title="模型（已读取）" value={ai.model} onChanged={(v: any) => saveAI({ ...ai, model: v as string })}>{models.map((model) => <Text tag={model}>{model}</Text>)}</Picker> : <TextField title="模型名称" value={ai.model} onChanged={(v) => saveAI({ ...ai, model: v })} />}
-          <Button title="刷新可用模型" action={() => { void refreshModels() }} />
+          <Button title="刷新可用模型" buttonStyle="glassProminent" action={() => { void refreshModels() }} />
           <Text modifiers={modifiers().font(12).foregroundStyle("secondaryLabel")}>{modelNotice}</Text>
           <TextField title="接口地址" value={ai.endpoint} onChanged={(v) => saveAI({ ...ai, endpoint: v })} />
           </SettingsCard>
