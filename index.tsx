@@ -122,11 +122,15 @@ function App() {
           modifiers={modifiers().frame({ maxWidth: "infinity" })}
         >
           <SettingsCard eyebrow="01" title="回复风格">
-          <Picker title="性别" value={profile.gender} onChanged={(value: any) => saveProfile({ ...profile, gender: value as Gender })}>{(["女", "男", "不透露"] as Gender[]).map((gender) => <Text tag={gender}>{gender}</Text>)}</Picker>
-          <TextField title="年龄" value={String(profile.age)} onChanged={(value) => saveProfile({ ...profile, age: clampAge(value) })} />
-          <Picker title="当前状态" value={moods.indexOf(profile.mood)} onChanged={(value: any) => saveProfile({ ...profile, mood: moods[Number(value)] || "普通" })}>{moods.map((mood, index) => <Text tag={index}>{mood}</Text>)}</Picker>
-          <Picker title="性格" value={profile.personality === "内向" ? 0 : 1} onChanged={(value: any) => saveProfile({ ...profile, personality: Number(value) === 0 ? "内向" : "外向" })}><Text tag={0}>内向</Text><Text tag={1}>外向</Text></Picker>
-          <Picker title="表达风格" value={tones.indexOf(profile.tone)} onChanged={(value: any) => saveProfile({ ...profile, tone: tones[Number(value)] || "温柔" })}>{tones.map((tone, index) => <Text tag={index}>{tone}</Text>)}</Picker>
+            <HStack spacing={12} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
+              <Picker title="性别" value={profile.gender} onChanged={(value: any) => saveProfile({ ...profile, gender: value as Gender })} modifiers={modifiers().frame({ maxWidth: "infinity" })}>{(["女", "男", "不透露"] as Gender[]).map((gender) => <Text tag={gender}>{gender}</Text>)}</Picker>
+              <TextField title="年龄" value={String(profile.age)} onChanged={(value) => saveProfile({ ...profile, age: clampAge(value) })} modifiers={modifiers().frame({ maxWidth: "infinity" })} />
+            </HStack>
+            <HStack spacing={12} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
+              <Picker title="当前状态" value={moods.indexOf(profile.mood)} onChanged={(value: any) => saveProfile({ ...profile, mood: moods[Number(value)] || "普通" })} modifiers={modifiers().frame({ maxWidth: "infinity" })}>{moods.map((mood, index) => <Text tag={index}>{mood}</Text>)}</Picker>
+              <Picker title="性格" value={profile.personality === "内向" ? 0 : 1} onChanged={(value: any) => saveProfile({ ...profile, personality: Number(value) === 0 ? "内向" : "外向" })} modifiers={modifiers().frame({ maxWidth: "infinity" })}><Text tag={0}>内向</Text><Text tag={1}>外向</Text></Picker>
+            </HStack>
+            <Picker title="表达风格" value={tones.indexOf(profile.tone)} onChanged={(value: any) => saveProfile({ ...profile, tone: tones[Number(value)] || "温柔" })}>{tones.map((tone, index) => <Text tag={index}>{tone}</Text>)}</Picker>
           </SettingsCard>
 
           <SettingsCard eyebrow="02" title="AI 服务">
