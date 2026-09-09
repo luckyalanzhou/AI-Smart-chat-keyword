@@ -25,6 +25,7 @@ const normalizeAI = (config: AIConfig): AIConfig => config.provider === "DeepSee
   ? { ...config, model: "deepseek-v4-flash" }
   : config
 const defaultProfile: Profile = { gender: "不透露", age: 25, mood: "普通", personality: "外向", tone: "温柔" }
+const replyTones: Profile["tone"][] = ["温柔", "活泼", "成熟", "简洁", "土味情话", "连环屁"]
 
 function generateReplies(sentence: string, profile: Profile): string[] {
   const s = sentence.trim()
@@ -199,7 +200,7 @@ function SmartReplyKeyboard() {
   const stored = Storage.get<Profile>("profile", { shared: true }) || defaultProfile
   const storedAI = Storage.get<AIConfig>("ai", { shared: true }) || defaultAI
   const initialAI = normalizeAI(storedAI)
-  const [profile] = useState<Profile>(stored)
+  const [profile, setProfile] = useState<Profile>(stored)
   const [ai] = useState<AIConfig>(initialAI)
   useEffect(() => { if (initialAI.model !== storedAI.model) Storage.set("ai", initialAI, { shared: true }) }, [])
   const [sentence, setSentence] = useState("")
@@ -286,6 +287,13 @@ function SmartReplyKeyboard() {
     CustomKeyboard.playInputClick()
     setNotice("已插入，是否发送由你确认")
   }, [])
+  const selectNextTone = useCallback(() => {
+    const next = replyTones[(replyTones.indexOf(profile.tone) + 1) % replyTones.length]
+    const updated = { ...profile, tone: next }
+    Storage.set("profile", updated, { shared: true })
+    setProfile(updated)
+    setNotice(`回复风格：${next}`)
+  }, [profile])
   const replyCards = useMemo(() => hasReplyResults ? (
     <VStack alignment="leading" spacing={5} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
       {replies.map((reply) => (
@@ -305,7 +313,7 @@ function SmartReplyKeyboard() {
     <VStack alignment="leading" spacing={7} padding={{ horizontal: 12, vertical: 8 }} background={keyboardBackground} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
       <HStack spacing={7} padding={{ horizontal: 12, vertical: 8 }} background={cardBackground} overlay={roundedBorder(16)} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
         <Text modifiers={modifiers().font(17).bold().foregroundStyle("label")}>智能回复</Text>
-        <Text modifiers={modifiers().font(11).foregroundStyle("secondaryLabel")}>{profile.tone}</Text>
+        <Button buttonStyle="plain" action={selectNextTone}><Text modifiers={modifiers().font(11).foregroundStyle("tint")}>{profile.tone}⌄</Text></Button>
         <Spacer />
         {activeOpponent ? <Button buttonStyle="plain" action={() => { const index = senderOptions.indexOf(activeOpponent); setSelectedOpponent(senderOptions[(index + 1) % senderOptions.length]) }}><Text modifiers={modifiers().font(10).foregroundStyle("tint")}>对方：{activeOpponent.slice(0, 6)}{activeOpponent.length > 6 ? "…" : ""}</Text></Button> : null}
         <Button buttonStyle="plain" action={() => CustomKeyboard.dismiss()}><Text modifiers={modifiers().font(12).foregroundStyle("secondaryLabel").padding({ horizontal: 7, vertical: 4 })}>完成</Text></Button>
