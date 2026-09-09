@@ -146,13 +146,11 @@ function App() {
             overlay={glassBorder(30)}
             modifiers={modifiers().frame({ maxWidth: "infinity" })}
           >
-            <Text modifiers={modifiers().font(11).bold().foregroundStyle("tint")}>AI REPLY KEYBOARD</Text>
-            <Text modifiers={modifiers().font(28).bold().foregroundStyle("label")}>自然地接上每句话</Text>
-            <Text modifiers={modifiers().font(14).foregroundStyle("secondaryLabel")}>粘贴聊天上下文，生成三条可编辑候选。</Text>
-            <Text modifiers={modifiers().font(12).foregroundStyle(isReady ? "tint" : "secondaryLabel")}>{isReady ? "已准备就绪 · 键盘内直接生成" : "还差一步 · 配置 AI 服务后即可使用"}</Text>
+            <Text modifiers={modifiers().font(28).bold().foregroundStyle("label")}>智能回复</Text>
+            <Text modifiers={modifiers().font(14).foregroundStyle(isReady ? "tint" : "secondaryLabel")}>{isReady ? "已准备就绪" : "完成 AI 配置后即可使用"}</Text>
           </VStack>
 
-          <SettingsCard eyebrow="当前状态" title={isReady ? "键盘已准备就绪" : "等待完成服务配置"} detail={isReady ? "设置会自动保存。切换到键盘后，粘贴聊天上下文即可生成。" : "填写 API Key 和模型名称后，键盘才能生成回复。"}>
+          <SettingsCard eyebrow="状态" title={isReady ? "已准备就绪" : "等待配置"}>
             <HStack spacing={8} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
               <StatusItem title="AI 服务" value={ai.provider} active={Boolean(ai.apiKey.trim())} />
               <StatusItem title="回复风格" value={profile.tone} active={true} />
@@ -160,7 +158,7 @@ function App() {
             </HStack>
           </SettingsCard>
 
-          <SettingsCard eyebrow="01 · REPLY STYLE" title="回复风格" detail="这些偏好会同步到键盘；无需额外保存。">
+          <SettingsCard eyebrow="01" title="回复风格">
           <Picker title="性别" value={profile.gender} onChanged={(value: any) => saveProfile({ ...profile, gender: value as Gender })}>{(["女", "男", "不透露"] as Gender[]).map((gender) => <Text tag={gender}>{gender}</Text>)}</Picker>
           <TextField title="年龄" value={String(profile.age)} onChanged={(value) => saveProfile({ ...profile, age: clampAge(value) })} />
           <Picker title="当前状态" value={moods.indexOf(profile.mood)} onChanged={(value: any) => saveProfile({ ...profile, mood: moods[Number(value)] || "普通" })}>{moods.map((mood, index) => <Text tag={index}>{mood}</Text>)}</Picker>
@@ -168,7 +166,7 @@ function App() {
           <Picker title="表达风格" value={tones.indexOf(profile.tone)} onChanged={(value: any) => saveProfile({ ...profile, tone: tones[Number(value)] || "温柔" })}>{tones.map((tone, index) => <Text tag={index}>{tone}</Text>)}</Picker>
           </SettingsCard>
 
-          <SettingsCard eyebrow="02 · AI CONNECTION" title="AI 服务" detail="密钥保存在本机；只有你粘贴的聊天内容会发送到所选服务商。">
+          <SettingsCard eyebrow="02" title="AI 服务">
           <Picker title="服务商" value={ai.provider} onChanged={(value: any) => changeProvider(value as AIProvider)}>{providers.map((provider) => <Text tag={provider}>{provider}</Text>)}</Picker>
           <HStack spacing={8}>{keyField}<Button title="" systemImage={showKey ? "eye" : "eye.slash"} action={() => setShowKey(!showKey)} /></HStack>
           {models.length > 0 ? <Picker title="模型（已读取）" value={ai.model} onChanged={(v: any) => saveAI({ ...ai, model: v as string })}>{models.map((model) => <Text tag={model}>{model}</Text>)}</Picker> : <TextField title="模型名称" value={ai.model} onChanged={(v) => saveAI({ ...ai, model: v })} />}
@@ -177,14 +175,6 @@ function App() {
           <TextField title="接口地址" value={ai.endpoint} onChanged={(v) => saveAI({ ...ai, endpoint: v })} />
           </SettingsCard>
 
-          <SettingsCard eyebrow="03 · HOW IT WORKS" title="三步开始回复" detail="聊天记录由你主动粘贴；脚本不会读取其他 App 的聊天历史。">
-            <HStack spacing={10} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
-              <StatusItem title="1" value="复制上下文" active={true} />
-              <StatusItem title="2" value="键盘内粘贴" active={true} />
-              <StatusItem title="3" value="点选插入" active={true} />
-            </HStack>
-            <Text modifiers={modifiers().font(12).foregroundStyle("secondaryLabel")}>请先在系统设置中为 Scripting 键盘开启“允许完全访问”，以便连接你选择的 AI 服务。</Text>
-          </SettingsCard>
         </VStack>
       </ScrollView>
     </NavigationStack>
