@@ -192,6 +192,20 @@ function geminiGenerateURL(config: AIConfig) {
 function SmartReplyKeyboard() {
   const cardBackground = { style: { light: "#EEF1F6", dark: "#232429" }, shape: { type: "rect", cornerRadius: 18 } }
   const mutedCardBackground = { style: { light: "#E3E8F1", dark: "#2B2D33" }, shape: { type: "rect", cornerRadius: 16 } }
+  const keyboardBackground = {
+    light: {
+      gradient: [
+        { color: "rgba(248,250,255,0.84)", location: 0 },
+        { color: "rgba(221,228,240,0.76)", location: 1 }
+      ], startPoint: { x: 0, y: 0 }, endPoint: { x: 1, y: 1 }
+    },
+    dark: {
+      gradient: [
+        { color: "rgba(47,52,65,0.82)", location: 0 },
+        { color: "rgba(24,27,35,0.78)", location: 1 }
+      ], startPoint: { x: 0, y: 0 }, endPoint: { x: 1, y: 1 }
+    }
+  }
   const stored = Storage.get<Profile>("profile", { shared: true }) || defaultProfile
   const storedAI = Storage.get<AIConfig>("ai", { shared: true }) || defaultAI
   const initialAI = normalizeAI(storedAI)
@@ -298,7 +312,7 @@ function SmartReplyKeyboard() {
   ), [hasReplyResults, insert, replies])
 
   return (
-    <VStack alignment="leading" spacing={7} padding={{ horizontal: 12, vertical: 8 }} background="systemBackground" modifiers={modifiers().frame({ maxWidth: "infinity" })}>
+    <VStack alignment="leading" spacing={7} padding={{ horizontal: 12, vertical: 8 }} background={keyboardBackground} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
       <HStack spacing={7} padding={{ horizontal: 12, vertical: 8 }} background={cardBackground} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
         <Text modifiers={modifiers().font(17).bold().foregroundStyle("label")}>智能回复</Text>
         <Text modifiers={modifiers().font(11).foregroundStyle("secondaryLabel")}>{profile.tone}</Text>
