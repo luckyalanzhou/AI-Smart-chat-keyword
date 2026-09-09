@@ -1,4 +1,4 @@
-import { GlassEffectContainer, UIGlass, VStack, HStack, Spacer, Text, TextField, Button, modifiers, useState, useEffect, useCallback, useMemo, fetch } from "scripting"
+import { VStack, HStack, Spacer, Text, TextField, Button, modifiers, useState, useEffect, useCallback, useMemo, fetch } from "scripting"
 type Gender = "女" | "男" | "不透露"
 type Mood = "开心" | "忙碌" | "疲惫" | "难过" | "生气" | "暧昧" | "相亲" | "普通"
 type Profile = {
@@ -190,6 +190,8 @@ function geminiGenerateURL(config: AIConfig) {
 }
 
 function SmartReplyKeyboard() {
+  const cardBackground = { style: { light: "#EEF1F6", dark: "#232429" }, shape: { type: "rect", cornerRadius: 18 } }
+  const mutedCardBackground = { style: { light: "#E3E8F1", dark: "#2B2D33" }, shape: { type: "rect", cornerRadius: 16 } }
   const stored = Storage.get<Profile>("profile", { shared: true }) || defaultProfile
   const storedAI = Storage.get<AIConfig>("ai", { shared: true }) || defaultAI
   const initialAI = normalizeAI(storedAI)
@@ -289,27 +291,26 @@ function SmartReplyKeyboard() {
       ))}
     </VStack>
   ) : (
-    <VStack alignment="leading" spacing={2} padding={{ horizontal: 12, vertical: 10 }} glassEffect={{ glass: UIGlass.regular().interactive(false), shape: { type: "rect", cornerRadius: 16 } }} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
+    <VStack alignment="leading" spacing={2} padding={{ horizontal: 12, vertical: 10 }} background={mutedCardBackground} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
       <Text modifiers={modifiers().font(13).bold().foregroundStyle("secondaryLabel")}>准备生成回复</Text>
       <Text modifiers={modifiers().font(11).foregroundStyle("tertiaryLabel")}>粘贴聊天内容后，生成三条可选回复</Text>
     </VStack>
   ), [hasReplyResults, insert, replies])
 
   return (
-    <GlassEffectContainer>
-    <VStack alignment="leading" spacing={7} padding={{ horizontal: 12, vertical: 8 }} background="clear" modifiers={modifiers().frame({ maxWidth: "infinity" })}>
-      <HStack spacing={7} padding={{ horizontal: 12, vertical: 8 }} glassEffect={{ glass: UIGlass.regular().interactive(false), shape: { type: "rect", cornerRadius: 18 } }} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
+    <VStack alignment="leading" spacing={7} padding={{ horizontal: 12, vertical: 8 }} background="systemBackground" modifiers={modifiers().frame({ maxWidth: "infinity" })}>
+      <HStack spacing={7} padding={{ horizontal: 12, vertical: 8 }} background={cardBackground} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
         <Text modifiers={modifiers().font(17).bold().foregroundStyle("label")}>智能回复</Text>
         <Text modifiers={modifiers().font(11).foregroundStyle("secondaryLabel")}>{profile.tone}</Text>
         <Spacer />
         {activeOpponent ? <Button buttonStyle="plain" action={() => { const index = senderOptions.indexOf(activeOpponent); setSelectedOpponent(senderOptions[(index + 1) % senderOptions.length]) }}><Text modifiers={modifiers().font(10).foregroundStyle("tint")}>对方：{activeOpponent.slice(0, 6)}{activeOpponent.length > 6 ? "…" : ""}</Text></Button> : null}
         <Button buttonStyle="plain" action={() => CustomKeyboard.dismiss()}><Text modifiers={modifiers().font(12).foregroundStyle("secondaryLabel").padding({ horizontal: 7, vertical: 4 })}>完成</Text></Button>
       </HStack>
-      <VStack alignment="leading" spacing={6} padding={9} glassEffect={{ glass: UIGlass.regular().interactive(false), shape: { type: "rect", cornerRadius: 18 } }} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
-      <TextField textFieldStyle="roundedBorder" title="聊天上下文" prompt="粘贴最近几句；时间行会自动忽略" value={transcript} onChanged={setTranscript} />
+      <VStack alignment="leading" spacing={6} padding={10} background={cardBackground} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
+      <TextField textFieldStyle="plain" title="聊天上下文" prompt="粘贴最近几句；时间行会自动忽略" value={transcript} onChanged={setTranscript} />
       <HStack spacing={5} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
-        <TextField textFieldStyle="roundedBorder" title="对方最后一句" prompt="可留空，自动从上下文提取" autofocus={true} value={sentence} onChanged={onSentenceChanged} modifiers={modifiers().frame({ maxWidth: "infinity" })} />
-        <Button buttonStyle="glassProminent" tint="blue" buttonBorderShape={{ roundedRectangleRadius: 14 }} action={() => { if (!busy) void generate() }}><Text modifiers={modifiers().bold()}>{busy ? "生成中" : "生成"}</Text></Button>
+        <TextField textFieldStyle="plain" title="对方最后一句" prompt="可留空，自动从上下文提取" autofocus={true} value={sentence} onChanged={onSentenceChanged} modifiers={modifiers().frame({ maxWidth: "infinity" })} />
+        <Button buttonStyle="borderedProminent" tint="blue" buttonBorderShape={{ roundedRectangleRadius: 14 }} action={() => { if (!busy) void generate() }}><Text modifiers={modifiers().bold()}>{busy ? "生成中" : "生成"}</Text></Button>
       </HStack>
       </VStack>
       <HStack spacing={4} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
@@ -320,7 +321,6 @@ function SmartReplyKeyboard() {
       </HStack>
       {replyCards}
     </VStack>
-    </GlassEffectContainer>
   )
 }
 
