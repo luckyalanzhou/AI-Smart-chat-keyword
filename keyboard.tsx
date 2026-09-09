@@ -195,15 +195,17 @@ function SmartReplyKeyboard() {
   const keyboardBackground = {
     light: {
       gradient: [
-        { color: "rgba(248,250,255,0.84)", location: 0 },
-        { color: "rgba(221,228,240,0.76)", location: 1 }
-      ], startPoint: { x: 0, y: 0 }, endPoint: { x: 1, y: 1 }
+        { color: "rgba(248,250,255,0.20)", location: 0 },
+        { color: "rgba(225,232,244,0.82)", location: 0.5 },
+        { color: "rgba(221,228,240,0.18)", location: 1 }
+      ], startPoint: { x: 0, y: 0 }, endPoint: { x: 0, y: 1 }
     },
     dark: {
       gradient: [
-        { color: "rgba(47,52,65,0.82)", location: 0 },
-        { color: "rgba(24,27,35,0.78)", location: 1 }
-      ], startPoint: { x: 0, y: 0 }, endPoint: { x: 1, y: 1 }
+        { color: "rgba(55,61,76,0.20)", location: 0 },
+        { color: "rgba(36,41,53,0.84)", location: 0.5 },
+        { color: "rgba(18,21,29,0.18)", location: 1 }
+      ], startPoint: { x: 0, y: 0 }, endPoint: { x: 0, y: 1 }
     }
   }
   const stored = Storage.get<Profile>("profile", { shared: true }) || defaultProfile
