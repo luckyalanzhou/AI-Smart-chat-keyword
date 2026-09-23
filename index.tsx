@@ -20,6 +20,9 @@ const defaultAI: AIConfig = { provider: "OpenAI", ...providerDefaults.OpenAI, ap
 const normalizeAI = (config: AIConfig): AIConfig => config.provider === "DeepSeek" && ["deepseek-chat", "deepseek-reasoner"].includes(config.model)
   ? { ...config, model: "deepseek-v4-flash" }
   : config
+let modelRequestId = 0
+let modelRequest: AbortController | null = null
+
 const providers = Object.keys(providerDefaults) as AIProvider[]
 const clampAge = (value: string) => Math.max(1, Math.min(120, Number(value) || 25))
 const listModelsURL = (config: AIConfig) => config.provider === "Google Gemini"
@@ -75,6 +78,10 @@ function App() {
     Storage.set("ai", next, { shared: true })
   }, [])
   const refreshModels = useCallback(async () => {
+    const requestId = ++modelRequestId
+    modelRequest?.abort()
+    const controller = new AbortController()
+    modelRequest = controller
     // Read the just-saved shared config so a provider switch never uses the
     // previous provider's endpoint or model while the state update is pending.
     const config = Storage.get<AIConfig>("ai", { shared: true }) || ai
@@ -83,22 +90,32 @@ function App() {
     try {
       const gemini = config.provider === "Google Gemini"
       const url = listModelsURL(config)
-      const response = await fetch(url, { headers: gemini ? { "x-goog-api-key": config.apiKey.trim() } : { Authorization: `Bearer ${config.apiKey.trim()}` } })
+      const response = await fetch(url, { signal: controller.signal, headers: gemini ? { "x-goog-api-key": config.apiKey.trim() } : { Authorization: `Bearer ${config.apiKey.trim()}` } })
       const data = await response.json()
       if (!response.ok) throw new Error(data?.error?.message || `HTTP ${response.status}`)
       const values = gemini
         ? (Array.isArray(data?.models) ? data.models.filter((m: any) => Array.isArray(m?.supportedGenerationMethods) && m.supportedGenerationMethods.includes("generateContent")).map((m: any) => String(m.name || "").replace(/^models\//, "")).filter((m: string) => m) : [])
         : (Array.isArray(data?.data) ? data.data.map((m: any) => String(m.id || "")).filter((m: string) => m) : [])
       if (!values.length) throw new Error("没有读取到模型")
+      if (requestId !== modelRequestId) return
       setModels(values)
       if (!values.includes(config.model)) saveAI({ ...config, model: values[0] })
       setModelNotice(`已读取 ${values.length} 个可用模型`)
-    } catch (error) { setModels([]); setModelNotice(`读取失败：${String(error).replace("Error: ", "")}`) }
+    } catch (error) {
+      if (requestId !== modelRequestId || (error as any)?.name === "AbortError") return
+      setModels([])
+      setModelNotice(`读取失败：${String(error).replace("Error: ", "")}`)
+    }
   }, [ai, saveAI])
   const changeProvider = useCallback((provider: AIProvider) => {
+    modelRequestId++
+    modelRequest?.abort()
+    modelRequest = null
     setModels([])
     setModelNotice("正在准备读取模型…")
-    saveAI({ ...ai, provider, ...providerDefaults[provider] })
+    // API keys belong to a specific provider. Never send the previous
+    // provider's key to the newly selected endpoint.
+    saveAI({ ...ai, provider, ...providerDefaults[provider], apiKey: "" })
   }, [ai, saveAI])
   const keyField = useMemo(
     () => showKey
