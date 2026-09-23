@@ -74,6 +74,12 @@ function App() {
     Storage.set("profile", next, { shared: true })
   }, [])
   const saveAI = useCallback((next: AIConfig) => {
+    // Any configuration edit invalidates an in-flight model request. Otherwise
+    // a response based on an older key/endpoint could write that stale config
+    // back when it selects the first available model.
+    modelRequestId++
+    modelRequest?.abort()
+    modelRequest = null
     setAI(next)
     Storage.set("ai", next, { shared: true })
   }, [])
@@ -99,7 +105,11 @@ function App() {
       if (!values.length) throw new Error("没有读取到模型")
       if (requestId !== modelRequestId) return
       setModels(values)
-      if (!values.includes(config.model)) saveAI({ ...config, model: values[0] })
+      // Use the current config. The request may have been started with an
+      // older snapshot, and must never restore an old key or endpoint.
+      const latest = Storage.get<AIConfig>("ai", { shared: true }) || ai
+      if (latest.provider !== config.provider || latest.endpoint !== config.endpoint || latest.apiKey !== config.apiKey) return
+      if (!values.includes(latest.model)) saveAI({ ...latest, model: values[0] })
       setModelNotice(`已读取 ${values.length} 个可用模型`)
     } catch (error) {
       if (requestId !== modelRequestId || (error as any)?.name === "AbortError") return
@@ -113,9 +123,12 @@ function App() {
     modelRequest = null
     setModels([])
     setModelNotice("正在准备读取模型…")
-    // API keys belong to a specific provider. Never send the previous
-    // provider's key to the newly selected endpoint.
-    saveAI({ ...ai, provider, ...providerDefaults[provider], apiKey: "" })
+    const storedKeys = Storage.get<Record<AIProvider, string>>("aiKeys", { shared: true }) || {} as Record<AIProvider, string>
+    storedKeys[ai.provider] = ai.apiKey
+    const next = { ...ai, provider, ...providerDefaults[provider], apiKey: storedKeys[provider] || "" }
+    storedKeys[provider] = next.apiKey
+    Storage.set("aiKeys", storedKeys, { shared: true })
+    saveAI(next)
   }, [ai, saveAI])
   const keyField = useMemo(
     () => showKey
@@ -123,7 +136,14 @@ function App() {
       : <SecureField title="API Key" prompt="粘贴服务商提供的密钥" value={ai.apiKey} onChanged={(value) => saveAI({ ...ai, apiKey: value })} />,
     [ai, saveAI, showKey],
   )
-  useEffect(() => { if (ai.apiKey.trim()) void refreshModels() }, [ai.provider])
+  useEffect(() => {
+    const storedKeys = Storage.get<Record<AIProvider, string>>("aiKeys", { shared: true }) || {} as Record<AIProvider, string>
+    if (storedKeys[ai.provider] !== ai.apiKey) {
+      storedKeys[ai.provider] = ai.apiKey
+      Storage.set("aiKeys", storedKeys, { shared: true })
+    }
+    if (ai.apiKey.trim()) void refreshModels()
+  }, [ai.provider])
 
   return (
     <NavigationStack>
