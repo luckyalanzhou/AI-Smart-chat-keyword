@@ -1,4 +1,4 @@
-import { Navigation, NavigationStack, ScrollView, VStack, HStack, Text, TextField, SecureField, Button, Picker, RoundedRectangle, modifiers, useState, useEffect, useCallback, useMemo, fetch, Script } from "scripting"
+import { Navigation, NavigationStack, Form, Section, HStack, Text, TextField, SecureField, Button, Picker, modifiers, useState, useEffect, useCallback, useMemo, fetch, Script } from "scripting"
 type Gender = "女" | "男" | "不透露"
 type Mood = "开心" | "忙碌" | "疲惫" | "难过" | "生气" | "暧昧" | "相亲" | "普通"
 type Profile = { gender: Gender; age: number; mood: Mood; personality: "内向" | "外向"; tone: "温柔" | "活泼" | "成熟" | "简洁" | "土味情话" | "连环屁" }
@@ -28,53 +28,6 @@ const clampAge = (value: string) => Math.max(1, Math.min(120, Number(value) || 2
 const listModelsURL = (config: AIConfig) => config.provider === "Google Gemini"
   ? "https://generativelanguage.googleapis.com/v1beta/models"
   : config.endpoint.replace(/\/chat\/completions\/?$/, "/models")
-
-const glassBorder = (cornerRadius: number) => (
-  <RoundedRectangle
-    cornerRadius={cornerRadius}
-    stroke={{
-      shapeStyle: { light: "rgba(60,60,67,0.18)", dark: "rgba(255,255,255,0.20)" },
-      strokeStyle: { lineWidth: 1 },
-    }}
-  />
-)
-
-function SettingsCard({ title, detail, children }: { title: string; detail?: string; children: any }) {
-  return (
-    <VStack
-      alignment="leading"
-      spacing={7}
-      padding={12}
-      glassEffect={{ type: "rect", cornerRadius: 18 }}
-      overlay={glassBorder(18)}
-      modifiers={modifiers().frame({ maxWidth: "infinity" })}
-    >
-      <VStack alignment="leading" spacing={1}>
-        <Text modifiers={modifiers().font(16).bold().foregroundStyle("label")}>{title}</Text>
-        {detail ? <Text modifiers={modifiers().font(11).foregroundStyle("secondaryLabel")}>{detail}</Text> : null}
-      </VStack>
-      {children}
-    </VStack>
-  )
-}
-
-function FormField({ label, children }: { label: string; children: any }) {
-  return (
-    <VStack alignment="leading" spacing={1} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
-      <Text modifiers={modifiers().font(11).foregroundStyle("secondaryLabel")}>{label}</Text>
-      {children}
-    </VStack>
-  )
-}
-
-function InlineField({ label, children }: { label: string; children: any }) {
-  return (
-    <HStack spacing={8} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
-      <Text modifiers={modifiers().font(12).foregroundStyle("secondaryLabel").frame({ width: 64, alignment: "leading" })}>{label}</Text>
-      {children}
-    </HStack>
-  )
-}
 
 function App() {
   const dismiss = Navigation.useDismiss()
@@ -151,8 +104,8 @@ function App() {
   }, [ai, saveAI])
   const keyField = useMemo(
     () => showKey
-      ? <TextField title="" prompt="粘贴服务商 API Key" value={ai.apiKey} onChanged={(value) => saveAI({ ...ai, apiKey: value })} modifiers={modifiers().frame({ maxWidth: "infinity" })} />
-      : <SecureField title="" prompt="粘贴服务商 API Key" value={ai.apiKey} onChanged={(value) => saveAI({ ...ai, apiKey: value })} modifiers={modifiers().frame({ maxWidth: "infinity" })} />,
+      ? <TextField title="API Key" prompt="粘贴服务商 API Key" value={ai.apiKey} onChanged={(value) => saveAI({ ...ai, apiKey: value })} modifiers={modifiers().frame({ maxWidth: "infinity" })} />
+      : <SecureField title="API Key" prompt="粘贴服务商 API Key" value={ai.apiKey} onChanged={(value) => saveAI({ ...ai, apiKey: value })} modifiers={modifiers().frame({ maxWidth: "infinity" })} />,
     [ai, saveAI, showKey],
   )
   useEffect(() => {
@@ -166,68 +119,39 @@ function App() {
 
   return (
     <NavigationStack>
-      <ScrollView>
-        <VStack
-          alignment="leading"
-          spacing={16}
-          padding={{ horizontal: 16, vertical: 20 }}
-          background="systemBackground"
-          navigationTitle="智能聊天键盘"
-          navigationBarTitleDisplayMode="inline"
-          toolbar={{ topBarTrailing: <Button title="关闭" systemImage="xmark" action={dismiss} /> }}
-          modifiers={modifiers().frame({ maxWidth: "infinity" })}
-        >
-          <SettingsCard title="回复风格" detail="这些设置只用于调整回复语气">
-            <HStack spacing={12} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
-              <FormField label="性别">
-                <Picker title="性别" value={profile.gender} onChanged={(value: any) => saveProfile({ ...profile, gender: value as Gender })} modifiers={modifiers().frame({ maxWidth: "infinity" })}>{(["女", "男", "不透露"] as Gender[]).map((gender) => <Text tag={gender}>{gender}</Text>)}</Picker>
-              </FormField>
-              <FormField label="年龄">
-                <TextField title="年龄" value={String(profile.age)} onChanged={(value) => saveProfile({ ...profile, age: clampAge(value) })} modifiers={modifiers().frame({ maxWidth: "infinity" })} />
-              </FormField>
-            </HStack>
-            <HStack spacing={12} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
-              <FormField label="当前状态">
-                <Picker title="当前状态" value={moods.indexOf(profile.mood)} onChanged={(value: any) => saveProfile({ ...profile, mood: moods[Number(value)] || "普通" })} modifiers={modifiers().frame({ maxWidth: "infinity" })}>{moods.map((mood, index) => <Text tag={index}>{mood}</Text>)}</Picker>
-              </FormField>
-              <FormField label="性格">
-                <Picker title="性格" value={profile.personality === "内向" ? 0 : 1} onChanged={(value: any) => saveProfile({ ...profile, personality: Number(value) === 0 ? "内向" : "外向" })} modifiers={modifiers().frame({ maxWidth: "infinity" })}><Text tag={0}>内向</Text><Text tag={1}>外向</Text></Picker>
-              </FormField>
-            </HStack>
-            <InlineField label="表达风格">
-              <Picker title="表达风格" value={tones.indexOf(profile.tone)} onChanged={(value: any) => saveProfile({ ...profile, tone: tones[Number(value)] || "温柔" })} modifiers={modifiers().frame({ maxWidth: "infinity" })}>{tones.map((tone, index) => <Text tag={index}>{tone}</Text>)}</Picker>
-            </InlineField>
-          </SettingsCard>
+      <Form
+        formStyle="grouped"
+        navigationTitle="智能聊天键盘"
+        navigationBarTitleDisplayMode="inline"
+        toolbar={{ topBarTrailing: <Button title="关闭" systemImage="xmark" action={dismiss} /> }}
+      >
+        <Section header={<Text>回复风格</Text>} footer={<Text>这些设置只用于调整回复语气，并通过共享存储供键盘读取。</Text>}>
+          <Picker title="性别" pickerStyle="menu" value={profile.gender} onChanged={(value: any) => saveProfile({ ...profile, gender: value as Gender })}>{(["女", "男", "不透露"] as Gender[]).map((gender) => <Text tag={gender}>{gender}</Text>)}</Picker>
+          <TextField title="年龄" value={String(profile.age)} onChanged={(value) => saveProfile({ ...profile, age: clampAge(value) })} />
+          <Picker title="当前状态" pickerStyle="menu" value={moods.indexOf(profile.mood)} onChanged={(value: any) => saveProfile({ ...profile, mood: moods[Number(value)] || "普通" })}>{moods.map((mood, index) => <Text tag={index}>{mood}</Text>)}</Picker>
+          <Picker title="性格" pickerStyle="menu" value={profile.personality === "内向" ? 0 : 1} onChanged={(value: any) => saveProfile({ ...profile, personality: Number(value) === 0 ? "内向" : "外向" })}><Text tag={0}>内向</Text><Text tag={1}>外向</Text></Picker>
+          <Picker title="表达风格" pickerStyle="menu" value={tones.indexOf(profile.tone)} onChanged={(value: any) => saveProfile({ ...profile, tone: tones[Number(value)] || "温柔" })}>{tones.map((tone, index) => <Text tag={index}>{tone}</Text>)}</Picker>
+        </Section>
 
-          <SettingsCard title="AI 服务" detail="当前设置会通过共享存储供键盘读取">
-            <InlineField label="服务商">
-              <Picker title="服务商" value={ai.provider} onChanged={(value: any) => changeProvider(value as AIProvider)} modifiers={modifiers().frame({ maxWidth: "infinity" })}>{providers.map((provider) => <Text tag={provider}>{provider}</Text>)}</Picker>
-            </InlineField>
-            <InlineField label="API Key">
-              <HStack spacing={8} padding={{ horizontal: 9, vertical: 4 }} background={{ style: { light: "#F4F6FA", dark: "#282A30" }, shape: { type: "rect", cornerRadius: 10 } }} overlay={glassBorder(10)} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
-                {keyField}
-                <Button title="" systemImage={showKey ? "eye" : "eye.slash"} action={() => setShowKey(!showKey)} />
-              </HStack>
-            </InlineField>
-            <InlineField label="模型">
-              <HStack spacing={8} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
-                {models.length > 0
-                  ? <Picker title="模型" value={ai.model} onChanged={(v: any) => saveAI({ ...ai, model: v as string })} modifiers={modifiers().frame({ maxWidth: "infinity" })}>{models.map((model) => <Text tag={model}>{model}</Text>)}</Picker>
-                  : <TextField title="" prompt="填写模型名称" value={ai.model} onChanged={(v) => saveAI({ ...ai, model: v })} modifiers={modifiers().frame({ maxWidth: "infinity" })} />}
-                <Button title="刷新" systemImage="arrow.clockwise" buttonStyle="plain" action={() => { void refreshModels() }} />
-              </HStack>
-            </InlineField>
-            <Text modifiers={modifiers().font(11).foregroundStyle("secondaryLabel")}>{modelNotice}</Text>
-            <Button title={showAdvanced ? "收起高级设置" : "高级设置"} systemImage={showAdvanced ? "chevron.up" : "chevron.down"} buttonStyle="plain" action={() => setShowAdvanced(!showAdvanced)} />
-            {showAdvanced ? (
-              <FormField label="接口地址">
-                <TextField title="" prompt="https://…/chat/completions" value={ai.endpoint} onChanged={(v) => saveAI({ ...ai, endpoint: v })} textFieldStyle="roundedBorder" />
-              </FormField>
-            ) : null}
-          </SettingsCard>
+        <Section header={<Text>AI 服务</Text>} footer={<Text>{modelNotice}</Text>}>
+          <Picker title="服务商" pickerStyle="menu" value={ai.provider} onChanged={(value: any) => changeProvider(value as AIProvider)}>{providers.map((provider) => <Text tag={provider}>{provider}</Text>)}</Picker>
+          <HStack>
+            {keyField}
+            <Button title={showKey ? "隐藏" : "显示"} systemImage={showKey ? "eye" : "eye.slash"} action={() => setShowKey(!showKey)} />
+          </HStack>
+          <HStack>
+            {models.length > 0
+              ? <Picker title="模型" pickerStyle="menu" value={ai.model} onChanged={(v: any) => saveAI({ ...ai, model: v as string })}>{models.map((model) => <Text tag={model}>{model}</Text>)}</Picker>
+              : <TextField title="模型" prompt="填写模型名称" value={ai.model} onChanged={(v) => saveAI({ ...ai, model: v })} />}
+            <Button title="刷新模型" systemImage="arrow.clockwise" action={() => { void refreshModels() }} />
+          </HStack>
+        </Section>
 
-        </VStack>
-      </ScrollView>
+        <Section header={<Text>高级设置</Text>}>
+          <Button title={showAdvanced ? "收起接口设置" : "自定义接口地址"} systemImage={showAdvanced ? "chevron.up" : "chevron.down"} action={() => setShowAdvanced(!showAdvanced)} />
+          {showAdvanced ? <TextField title="接口地址" prompt="https://…/chat/completions" value={ai.endpoint} onChanged={(v) => saveAI({ ...ai, endpoint: v })} /> : null}
+        </Section>
+      </Form>
     </NavigationStack>
   )
 }

@@ -1,4 +1,4 @@
-import { RoundedRectangle, VStack, HStack, Spacer, Text, TextField, Button, modifiers, useState, useEffect, useCallback, useMemo, fetch } from "scripting"
+import { VStack, HStack, Spacer, Text, TextField, Button, Picker, modifiers, useState, useEffect, useCallback, useMemo, fetch } from "scripting"
 type Gender = "女" | "男" | "不透露"
 type Mood = "开心" | "忙碌" | "疲惫" | "难过" | "生气" | "暧昧" | "相亲" | "普通"
 type Profile = {
@@ -196,13 +196,7 @@ function geminiGenerateURL(config: AIConfig) {
 }
 
 function SmartReplyKeyboard() {
-  const cardBackground = { style: { light: "#FFFFFF", dark: "#202126" }, shape: { type: "rect", cornerRadius: 16 } }
-  const mutedCardBackground = { style: { light: "#F4F6FA", dark: "#282A30" }, shape: { type: "rect", cornerRadius: 12 } }
-  const inputBackground = { style: { light: "#F8F9FC", dark: "#18191D" }, shape: { type: "rect", cornerRadius: 10 } }
-  const borderColor = { light: "rgba(44,56,76,0.18)", dark: "rgba(255,255,255,0.20)" }
-  const roundedBorder = (cornerRadius: number) => <RoundedRectangle cornerRadius={cornerRadius} stroke={{ shapeStyle: borderColor, strokeStyle: { lineWidth: 1 } }} />
-  // Match the host keyboard's adaptive system surface instead of approximating it
-  // with a fixed blue-gray color.
+  // Use the host keyboard's adaptive system surface and native control styles.
   const keyboardBackground = "secondarySystemBackground"
   const stored = Storage.get<Profile>("profile", { shared: true }) || defaultProfile
   const storedAI = Storage.get<AIConfig>("ai", { shared: true }) || defaultAI
@@ -298,48 +292,47 @@ function SmartReplyKeyboard() {
     CustomKeyboard.playInputClick()
     setNotice("已插入，是否发送由你确认")
   }, [])
-  const selectNextTone = useCallback(() => {
-    const next = replyTones[(replyTones.indexOf(profile.tone) + 1) % replyTones.length]
-    const updated = { ...profile, tone: next }
+  const selectTone = useCallback((tone: Profile["tone"]) => {
+    const updated = { ...profile, tone }
     Storage.set("profile", updated, { shared: true })
     setProfile(updated)
-    setNotice(`回复风格：${next}`)
+    setNotice(`回复风格：${tone}`)
   }, [profile])
   const replyCards = useMemo(() => hasReplyResults ? (
     <VStack alignment="leading" spacing={5} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
       {replies.map((reply, index) => (
-        <Button buttonStyle="plain" action={() => insert(reply)}>
-          <HStack spacing={9} padding={{ horizontal: 11, vertical: 8 }} background={mutedCardBackground} overlay={roundedBorder(12)} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
+        <Button buttonStyle="bordered" buttonBorderShape={{ roundedRectangleRadius: 12 }} action={() => insert(reply)}>
+          <HStack spacing={9} padding={{ horizontal: 8, vertical: 7 }} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
             <Text modifiers={modifiers().font(11).bold().foregroundStyle("tint")}>{index + 1}</Text>
             <Text modifiers={modifiers().font(14).foregroundStyle("label").frame({ maxWidth: "infinity", alignment: "leading" })}>{reply}</Text>
-            <Text modifiers={modifiers().font(11).foregroundStyle("tint")}>插入 ›</Text>
+            <Text modifiers={modifiers().font(11).foregroundStyle("tint")}>插入</Text>
           </HStack>
         </Button>
       ))}
     </VStack>
   ) : (
-    <VStack alignment="leading" spacing={2} padding={{ horizontal: 12, vertical: 10 }} background={mutedCardBackground} overlay={roundedBorder(12)} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
+    <VStack alignment="leading" spacing={2} padding={{ horizontal: 4, vertical: 5 }} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
       <Text modifiers={modifiers().font(13).bold().foregroundStyle("secondaryLabel")}>准备生成回复</Text>
-      <Text modifiers={modifiers().font(11).foregroundStyle("tertiaryLabel")}>粘贴聊天内容后，生成三条可选回复</Text>
+      <Text modifiers={modifiers().font(11).foregroundStyle("tertiaryLabel")}>粘贴对方消息后，生成三条可选回复</Text>
     </VStack>
   ), [hasReplyResults, insert, replies])
 
   return (
-    <VStack alignment="leading" spacing={7} padding={{ horizontal: 12, vertical: 8 }} background={keyboardBackground} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
-      <HStack spacing={7} padding={{ horizontal: 12, vertical: 8 }} background={cardBackground} overlay={roundedBorder(16)} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
-        <Text modifiers={modifiers().font(17).bold().foregroundStyle("label")}>智能回复</Text>
-        <Button buttonStyle="plain" action={selectNextTone}><Text modifiers={modifiers().font(11).foregroundStyle("tint")}>{profile.tone}⌄</Text></Button>
+    <VStack alignment="leading" spacing={6} padding={{ horizontal: 12, vertical: 8 }} background={keyboardBackground} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
+      <HStack spacing={6} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
+        <Text modifiers={modifiers().font(16).bold().foregroundStyle("label")}>智能回复</Text>
+        <Picker label={<Text modifiers={modifiers().font(12).foregroundStyle("tint")}>{profile.tone}⌄</Text>} pickerStyle="menu" value={profile.tone} onChanged={(tone: any) => selectTone(tone as Profile["tone"])}>{replyTones.map((tone) => <Text tag={tone}>{tone}</Text>)}</Picker>
         <Spacer />
         {senderOptions.length > 1 && activeOpponent ? <Button buttonStyle="plain" action={() => { const index = senderOptions.indexOf(activeOpponent); setSelectedOpponent(senderOptions[(index + 1) % senderOptions.length]) }}><Text modifiers={modifiers().font(11).foregroundStyle("tint")}>对方：{activeOpponent.slice(0, 6)}{activeOpponent.length > 6 ? "…" : ""}</Text></Button> : null}
-        <Button buttonStyle="plain" action={() => CustomKeyboard.dismiss()}><Text modifiers={modifiers().font(12).foregroundStyle("secondaryLabel").padding({ horizontal: 7, vertical: 4 })}>完成</Text></Button>
+        <Button title="完成" buttonStyle="plain" action={() => CustomKeyboard.dismiss()} />
       </HStack>
-      <VStack alignment="leading" spacing={8} padding={10} background={cardBackground} overlay={roundedBorder(16)} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
+      <VStack alignment="leading" spacing={7} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
         <VStack alignment="leading" spacing={4} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
           <Text modifiers={modifiers().font(12).bold().foregroundStyle("secondaryLabel")}>对方消息</Text>
-          <TextField textFieldStyle="plain" title="对方消息" prompt="粘贴对方消息，或粘贴整段聊天记录" autofocus={true} value={sentence} onChanged={onSentenceChanged} padding={{ horizontal: 9, vertical: 7 }} background={inputBackground} overlay={roundedBorder(10)} modifiers={modifiers().frame({ maxWidth: "infinity" })} />
+          <TextField textFieldStyle="roundedBorder" title="对方消息" prompt="粘贴对方消息，或粘贴整段聊天记录" autofocus={true} value={sentence} onChanged={onSentenceChanged} modifiers={modifiers().frame({ maxWidth: "infinity" })} />
           <Text modifiers={modifiers().font(11).foregroundStyle("tertiaryLabel")}>粘贴聊天记录时会自动识别对方最后一句</Text>
         </VStack>
-        {showContext ? <TextField textFieldStyle="plain" title="补充上下文（可选）" prompt="粘贴前几句对话，帮助理解语境" value={transcript} onChanged={setTranscript} padding={{ horizontal: 9, vertical: 7 }} background={inputBackground} overlay={roundedBorder(10)} modifiers={modifiers().frame({ maxWidth: "infinity" })} /> : null}
+        {showContext ? <TextField textFieldStyle="roundedBorder" title="补充上下文" prompt="粘贴前几句对话，帮助理解语境" value={transcript} onChanged={setTranscript} modifiers={modifiers().frame({ maxWidth: "infinity" })} /> : null}
         <HStack spacing={6} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
           <Button buttonStyle="plain" action={() => setShowContext(!showContext)}>
             <Text modifiers={modifiers().font(12).foregroundStyle("tint")}>{showContext ? "收起上下文⌃" : "＋ 添加上下文"}</Text>

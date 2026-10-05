@@ -12,32 +12,49 @@ const settingsSource = fs.readFileSync(path.join(__dirname, "index.tsx"), "utf8"
 const keyboardSource = fs.readFileSync(path.join(__dirname, "keyboard.tsx"), "utf8")
 
 const checks = [
-  ["settings cards use compact spacing", () => {
-    assert.match(settingsSource, /spacing=\{7\}[\s\S]*?padding=\{12\}[\s\S]*?cornerRadius: 18/)
+  ["settings use Scripting's grouped native form", () => {
+    assert.match(settingsSource, /import \{[^}]*\bForm\b[^}]*\bSection\b[^}]*\} from "scripting"/)
+    assert.match(settingsSource, /<Form\s+formStyle="grouped"/)
+    assert.equal((settingsSource.match(/<Section\b/g) || []).length, 3)
+    assert.doesNotMatch(settingsSource, /SettingsCard|glassEffect|glassBorder|<ScrollView/)
   }],
-  ["AI settings use aligned compact rows", () => {
-    assert.match(settingsSource, /function InlineField\([\s\S]*?width: 64/)
-    for (const label of ["服务商", "API Key", "模型"]) {
-      assert.ok(settingsSource.includes(`<InlineField label="${label}">`), `missing inline field: ${label}`)
+  ["profile and provider choices use native menu pickers", () => {
+    assert.equal((settingsSource.match(/<Picker\b[^>]*pickerStyle="menu"/g) || []).length, 6)
+    for (const title of ["性别", "当前状态", "性格", "表达风格", "服务商", "模型"]) {
+      assert.ok(settingsSource.includes(`title="${title}" pickerStyle="menu"`), `missing native menu picker: ${title}`)
     }
   }],
-  ["API key has visible secure and reveal input states", () => {
-    assert.match(settingsSource, /<SecureField title="" prompt="粘贴服务商 API Key"/)
-    assert.match(settingsSource, /<TextField title="" prompt="粘贴服务商 API Key"/)
-    assert.match(settingsSource, /background=\{\{ style: \{ light: "#F4F6FA", dark: "#282A30"/)
+  ["API key has an accessible label and native secure/reveal states", () => {
+    assert.match(settingsSource, /<SecureField title="API Key" prompt="粘贴服务商 API Key"/)
+    assert.match(settingsSource, /<TextField title="API Key" prompt="粘贴服务商 API Key"/)
     assert.match(settingsSource, /systemImage=\{showKey \? "eye" : "eye\.slash"\}/)
+    assert.match(settingsSource, /title=\{showKey \? "隐藏" : "显示"\}/)
   }],
-  ["custom endpoint is presented as an editable rounded field", () => {
-    assert.match(settingsSource, /prompt="https:\/\/…\/chat\/completions"[\s\S]*?textFieldStyle="roundedBorder"/)
+  ["advanced endpoint remains progressively disclosed and editable", () => {
+    assert.match(settingsSource, /title=\{showAdvanced \? "收起接口设置" : "自定义接口地址"\}/)
+    assert.match(settingsSource, /showAdvanced \? <TextField title="接口地址" prompt="https:\/\/…\/chat\/completions"/)
   }],
-  ["reply suggestions are full-row insert buttons with clear affordance", () => {
-    assert.match(keyboardSource, /replies\.map\(\(reply, index\) => \([\s\S]*?<Button buttonStyle="plain" action=\{\(\) => insert\(reply\)\}>[\s\S]*?background=\{mutedCardBackground\} overlay=\{roundedBorder\(12\)\}[\s\S]*?插入 ›/)
+  ["keyboard uses adaptive system surface and native rounded inputs", () => {
+    assert.match(keyboardSource, /const keyboardBackground = "secondarySystemBackground"/)
+    assert.equal((keyboardSource.match(/textFieldStyle="roundedBorder"/g) || []).length, 2)
+    assert.match(keyboardSource, /<Picker label=\{<Text modifiers=\{modifiers\(\)\.font\(12\)\.foregroundStyle\("tint"\)\}>\{profile\.tone\}⌄<\/Text>\} pickerStyle="menu"/)
+    assert.doesNotMatch(keyboardSource, /<RoundedRectangle|roundedBorder\(|cardBackground|mutedCardBackground|inputBackground/)
   }],
-  ["generate action reflects whether suggestions already exist", () => {
+  ["reply suggestions remain directly tappable native buttons", () => {
+    assert.match(keyboardSource, /<Button buttonStyle="bordered" buttonBorderShape=\{\{ roundedRectangleRadius: 12 \}\} action=\{\(\) => insert\(reply\)\}>/)
+    assert.match(keyboardSource, /插入/)
+    assert.match(keyboardSource, /buttonStyle="borderedProminent" tint="blue"/)
+  }],
+  ["generation, context, sender selection, and completion actions remain available", () => {
+    for (const feature of ["生成回复", "添加上下文", "完成", "清空", "对方："]) {
+      assert.ok(keyboardSource.includes(feature), `missing keyboard action: ${feature}`)
+    }
     assert.match(keyboardSource, /busy \? "生成中" : hasReplyResults \? "重新生成" : "生成回复"/)
+    assert.match(keyboardSource, /CustomKeyboard\.insertText\(text\)/)
   }],
-  ["keyboard height stays within the supported compact and results layouts", () => {
+  ["keyboard height stays within Scripting's recommended range", () => {
     assert.match(keyboardSource, /CustomKeyboard\.requestHeight\(showContext \|\| hasReplyResults \? 360 : 270\)/)
+    assert.match(keyboardSource, /CustomKeyboard\.requestHeight\(270\)/)
   }],
 ]
 
