@@ -39,21 +39,29 @@ const glassBorder = (cornerRadius: number) => (
   />
 )
 
-function SettingsCard({ title, detail, eyebrow, children }: { title: string; detail?: string; eyebrow?: string; children: any }) {
+function SettingsCard({ title, detail, children }: { title: string; detail?: string; children: any }) {
   return (
     <VStack
       alignment="leading"
-      spacing={13}
-      padding={18}
-      glassEffect={{ type: "rect", cornerRadius: 24 }}
-      overlay={glassBorder(24)}
+      spacing={10}
+      padding={15}
+      glassEffect={{ type: "rect", cornerRadius: 20 }}
+      overlay={glassBorder(20)}
       modifiers={modifiers().frame({ maxWidth: "infinity" })}
     >
-      <VStack alignment="leading" spacing={3}>
-        {eyebrow ? <Text modifiers={modifiers().font(10).bold().foregroundStyle("tertiaryLabel")}>{eyebrow}</Text> : null}
+      <VStack alignment="leading" spacing={2}>
         <Text modifiers={modifiers().font(16).bold().foregroundStyle("label")}>{title}</Text>
         {detail ? <Text modifiers={modifiers().font(12).foregroundStyle("secondaryLabel")}>{detail}</Text> : null}
       </VStack>
+      {children}
+    </VStack>
+  )
+}
+
+function FormField({ label, children }: { label: string; children: any }) {
+  return (
+    <VStack alignment="leading" spacing={2} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
+      <Text modifiers={modifiers().font(12).foregroundStyle("secondaryLabel")}>{label}</Text>
       {children}
     </VStack>
   )
@@ -66,6 +74,7 @@ function App() {
   const initialAI = normalizeAI(storedAI)
   const [ai, setAI] = useState<AIConfig>(initialAI)
   const [showKey, setShowKey] = useState(false)
+  const [showAdvanced, setShowAdvanced] = useState(initialAI.provider === "自定义兼容接口")
   const [models, setModels] = useState<string[]>([])
   const [modelNotice, setModelNotice] = useState("填写 API Key 后会自动读取可用模型")
   useEffect(() => { if (initialAI.model !== storedAI.model) Storage.set("ai", initialAI, { shared: true }) }, [])
@@ -123,6 +132,7 @@ function App() {
     modelRequest = null
     setModels([])
     setModelNotice("正在准备读取模型…")
+    setShowAdvanced(provider === "自定义兼容接口")
     const storedKeys = Storage.get<Record<AIProvider, string>>("aiKeys", { shared: true }) || {} as Record<AIProvider, string>
     storedKeys[ai.provider] = ai.apiKey
     const next = { ...ai, provider, ...providerDefaults[provider], apiKey: storedKeys[provider] || "" }
@@ -158,25 +168,53 @@ function App() {
           toolbar={{ topBarTrailing: <Button title="关闭" systemImage="xmark" action={dismiss} /> }}
           modifiers={modifiers().frame({ maxWidth: "infinity" })}
         >
-          <SettingsCard eyebrow="01" title="回复风格">
+          <SettingsCard title="回复风格" detail="这些设置只用于调整回复语气">
             <HStack spacing={12} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
-              <Picker title="性别" value={profile.gender} onChanged={(value: any) => saveProfile({ ...profile, gender: value as Gender })} modifiers={modifiers().frame({ maxWidth: "infinity" })}>{(["女", "男", "不透露"] as Gender[]).map((gender) => <Text tag={gender}>{gender}</Text>)}</Picker>
-              <TextField title="年龄" value={String(profile.age)} onChanged={(value) => saveProfile({ ...profile, age: clampAge(value) })} modifiers={modifiers().frame({ maxWidth: "infinity" })} />
+              <FormField label="性别">
+                <Picker title="性别" value={profile.gender} onChanged={(value: any) => saveProfile({ ...profile, gender: value as Gender })} modifiers={modifiers().frame({ maxWidth: "infinity" })}>{(["女", "男", "不透露"] as Gender[]).map((gender) => <Text tag={gender}>{gender}</Text>)}</Picker>
+              </FormField>
+              <FormField label="年龄">
+                <TextField title="年龄" value={String(profile.age)} onChanged={(value) => saveProfile({ ...profile, age: clampAge(value) })} modifiers={modifiers().frame({ maxWidth: "infinity" })} />
+              </FormField>
             </HStack>
             <HStack spacing={12} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
-              <Picker title="当前状态" value={moods.indexOf(profile.mood)} onChanged={(value: any) => saveProfile({ ...profile, mood: moods[Number(value)] || "普通" })} modifiers={modifiers().frame({ maxWidth: "infinity" })}>{moods.map((mood, index) => <Text tag={index}>{mood}</Text>)}</Picker>
-              <Picker title="性格" value={profile.personality === "内向" ? 0 : 1} onChanged={(value: any) => saveProfile({ ...profile, personality: Number(value) === 0 ? "内向" : "外向" })} modifiers={modifiers().frame({ maxWidth: "infinity" })}><Text tag={0}>内向</Text><Text tag={1}>外向</Text></Picker>
+              <FormField label="当前状态">
+                <Picker title="当前状态" value={moods.indexOf(profile.mood)} onChanged={(value: any) => saveProfile({ ...profile, mood: moods[Number(value)] || "普通" })} modifiers={modifiers().frame({ maxWidth: "infinity" })}>{moods.map((mood, index) => <Text tag={index}>{mood}</Text>)}</Picker>
+              </FormField>
+              <FormField label="性格">
+                <Picker title="性格" value={profile.personality === "内向" ? 0 : 1} onChanged={(value: any) => saveProfile({ ...profile, personality: Number(value) === 0 ? "内向" : "外向" })} modifiers={modifiers().frame({ maxWidth: "infinity" })}><Text tag={0}>内向</Text><Text tag={1}>外向</Text></Picker>
+              </FormField>
             </HStack>
-            <Picker title="表达风格" value={tones.indexOf(profile.tone)} onChanged={(value: any) => saveProfile({ ...profile, tone: tones[Number(value)] || "温柔" })}>{tones.map((tone, index) => <Text tag={index}>{tone}</Text>)}</Picker>
+            <FormField label="表达风格">
+              <Picker title="表达风格" value={tones.indexOf(profile.tone)} onChanged={(value: any) => saveProfile({ ...profile, tone: tones[Number(value)] || "温柔" })}>{tones.map((tone, index) => <Text tag={index}>{tone}</Text>)}</Picker>
+            </FormField>
           </SettingsCard>
 
-          <SettingsCard eyebrow="02" title="AI 服务">
-          <Picker title="服务商" value={ai.provider} onChanged={(value: any) => changeProvider(value as AIProvider)}>{providers.map((provider) => <Text tag={provider}>{provider}</Text>)}</Picker>
-          <HStack spacing={8}>{keyField}<Button title="" systemImage={showKey ? "eye" : "eye.slash"} action={() => setShowKey(!showKey)} /></HStack>
-          {models.length > 0 ? <Picker title="模型（已读取）" value={ai.model} onChanged={(v: any) => saveAI({ ...ai, model: v as string })}>{models.map((model) => <Text tag={model}>{model}</Text>)}</Picker> : <TextField title="模型名称" value={ai.model} onChanged={(v) => saveAI({ ...ai, model: v })} />}
-          <Button title="刷新可用模型" buttonStyle="glassProminent" action={() => { void refreshModels() }} />
-          <Text modifiers={modifiers().font(12).foregroundStyle("secondaryLabel")}>{modelNotice}</Text>
-          <TextField title="接口地址" value={ai.endpoint} onChanged={(v) => saveAI({ ...ai, endpoint: v })} />
+          <SettingsCard title="AI 服务" detail="当前设置会通过共享存储供键盘读取">
+            <FormField label="服务商">
+              <Picker title="服务商" value={ai.provider} onChanged={(value: any) => changeProvider(value as AIProvider)} modifiers={modifiers().frame({ maxWidth: "infinity" })}>{providers.map((provider) => <Text tag={provider}>{provider}</Text>)}</Picker>
+            </FormField>
+            <FormField label="API Key">
+              <HStack spacing={8} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
+                {keyField}
+                <Button title="" systemImage={showKey ? "eye" : "eye.slash"} action={() => setShowKey(!showKey)} />
+              </HStack>
+            </FormField>
+            <FormField label="模型">
+              <HStack spacing={8} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
+                {models.length > 0
+                  ? <Picker title="模型" value={ai.model} onChanged={(v: any) => saveAI({ ...ai, model: v as string })} modifiers={modifiers().frame({ maxWidth: "infinity" })}>{models.map((model) => <Text tag={model}>{model}</Text>)}</Picker>
+                  : <TextField title="模型名称" value={ai.model} onChanged={(v) => saveAI({ ...ai, model: v })} modifiers={modifiers().frame({ maxWidth: "infinity" })} />}
+                <Button title="刷新" systemImage="arrow.clockwise" action={() => { void refreshModels() }} />
+              </HStack>
+            </FormField>
+            <Text modifiers={modifiers().font(12).foregroundStyle("secondaryLabel")}>{modelNotice}</Text>
+            <Button title={showAdvanced ? "收起高级设置" : "高级设置"} systemImage={showAdvanced ? "chevron.up" : "chevron.down"} buttonStyle="plain" action={() => setShowAdvanced(!showAdvanced)} />
+            {showAdvanced ? (
+              <FormField label="接口地址">
+                <TextField title="接口地址" value={ai.endpoint} onChanged={(v) => saveAI({ ...ai, endpoint: v })} />
+              </FormField>
+            ) : null}
           </SettingsCard>
 
         </VStack>

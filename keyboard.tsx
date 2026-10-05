@@ -106,7 +106,13 @@ function labelledContext(value: string, opponentSender?: string) {
 
 function latestMessage(transcript: string, explicitMessage: string, opponentSender?: string) {
   const explicitCopied = copiedMessages(explicitMessage)
-  const copied = explicitCopied.length ? explicitCopied : copiedMessages(transcript)
+  if (explicitCopied.length) {
+    const opponent = opponentSender || explicitCopied[0].sender
+    const incoming = [...explicitCopied].reverse().find((item) => item.sender === opponent)
+    if (incoming?.message.trim()) return incoming.message.trim()
+  }
+  if (explicitMessage.trim()) return explicitMessage.trim()
+  const copied = copiedMessages(transcript)
   if (copied.length) {
     // The first username in a copied conversation is the other person. Every
     // later message from that username is therefore an incoming message.
@@ -114,7 +120,6 @@ function latestMessage(transcript: string, explicitMessage: string, opponentSend
     const incoming = [...copied].reverse().find((item) => item.sender === opponent)
     if (incoming?.message.trim()) return incoming.message.trim()
   }
-  if (explicitMessage.trim()) return explicitMessage.trim()
   const lines = transcriptLines(transcript)
   // Prefer an explicitly marked incoming line. For plain text, the first line
   // is the other person's message and speakers alternate thereafter.
@@ -208,12 +213,16 @@ function SmartReplyKeyboard() {
   const [sentence, setSentence] = useState("")
   const [lastInputLength, setLastInputLength] = useState(0)
   const [transcript, setTranscript] = useState("")
+  const [showContext, setShowContext] = useState(false)
   const [selectedOpponent, setSelectedOpponent] = useState("")
   const [replies, setReplies] = useState<string[]>(["先粘贴对方消息", "再点击生成回复", "点选即可插入"])
   const [hasReplyResults, setHasReplyResults] = useState(false)
   const [notice, setNotice] = useState("点输入框后长按粘贴对方消息")
   const [retryText, setRetryText] = useState("")
   const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    CustomKeyboard.requestHeight(showContext || hasReplyResults ? 360 : 270)
+  }, [showContext, hasReplyResults])
   const senderOptions = useMemo(() => {
     const source = transcript.trim() ? transcript : sentence
     return [...new Set(copiedMessages(source).map((item) => item.sender))]
@@ -300,7 +309,7 @@ function SmartReplyKeyboard() {
     <VStack alignment="leading" spacing={5} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
       {replies.map((reply) => (
         <Button buttonStyle="glass" buttonBorderShape={{ roundedRectangleRadius: 14 }} controlSize="large" action={() => insert(reply)}>
-          <Text lineLimit={1} modifiers={modifiers().font(14).foregroundStyle("label").padding({ horizontal: 10, vertical: 6 }).frame({ maxWidth: "infinity" })}>{reply}</Text>
+          <Text modifiers={modifiers().font(14).foregroundStyle("label").padding({ horizontal: 12, vertical: 9 }).frame({ maxWidth: "infinity" })}>{reply}</Text>
         </Button>
       ))}
     </VStack>
@@ -317,21 +326,29 @@ function SmartReplyKeyboard() {
         <Text modifiers={modifiers().font(17).bold().foregroundStyle("label")}>智能回复</Text>
         <Button buttonStyle="plain" action={selectNextTone}><Text modifiers={modifiers().font(11).foregroundStyle("tint")}>{profile.tone}⌄</Text></Button>
         <Spacer />
-        {activeOpponent ? <Button buttonStyle="plain" action={() => { const index = senderOptions.indexOf(activeOpponent); setSelectedOpponent(senderOptions[(index + 1) % senderOptions.length]) }}><Text modifiers={modifiers().font(10).foregroundStyle("tint")}>对方：{activeOpponent.slice(0, 6)}{activeOpponent.length > 6 ? "…" : ""}</Text></Button> : null}
+        {senderOptions.length > 1 && activeOpponent ? <Button buttonStyle="plain" action={() => { const index = senderOptions.indexOf(activeOpponent); setSelectedOpponent(senderOptions[(index + 1) % senderOptions.length]) }}><Text modifiers={modifiers().font(11).foregroundStyle("tint")}>对方：{activeOpponent.slice(0, 6)}{activeOpponent.length > 6 ? "…" : ""}</Text></Button> : null}
         <Button buttonStyle="plain" action={() => CustomKeyboard.dismiss()}><Text modifiers={modifiers().font(12).foregroundStyle("secondaryLabel").padding({ horizontal: 7, vertical: 4 })}>完成</Text></Button>
       </HStack>
-      <VStack alignment="leading" spacing={6} padding={10} background={cardBackground} overlay={roundedBorder(16)} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
-      <TextField textFieldStyle="plain" title="聊天上下文" prompt="粘贴最近几句；时间行会自动忽略" value={transcript} onChanged={setTranscript} padding={{ horizontal: 8, vertical: 6 }} background={inputBackground} overlay={roundedBorder(10)} />
-      <HStack spacing={5} padding={{ horizontal: 8, vertical: 4 }} background={inputBackground} overlay={roundedBorder(10)} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
-        <TextField textFieldStyle="plain" title="对方最后一句" prompt="可留空，自动从上下文提取" autofocus={true} value={sentence} onChanged={onSentenceChanged} modifiers={modifiers().frame({ maxWidth: "infinity" })} />
-        <Button buttonStyle="borderedProminent" tint="blue" buttonBorderShape={{ roundedRectangleRadius: 14 }} action={() => { if (!busy) void generate() }}><Text modifiers={modifiers().bold()}>{busy ? "生成中" : "生成"}</Text></Button>
-      </HStack>
+      <VStack alignment="leading" spacing={8} padding={10} background={cardBackground} overlay={roundedBorder(16)} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
+        <VStack alignment="leading" spacing={4} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
+          <Text modifiers={modifiers().font(12).bold().foregroundStyle("secondaryLabel")}>对方消息</Text>
+          <TextField textFieldStyle="plain" title="对方消息" prompt="粘贴对方消息，或粘贴整段聊天记录" autofocus={true} value={sentence} onChanged={onSentenceChanged} padding={{ horizontal: 9, vertical: 7 }} background={inputBackground} overlay={roundedBorder(10)} modifiers={modifiers().frame({ maxWidth: "infinity" })} />
+          <Text modifiers={modifiers().font(11).foregroundStyle("tertiaryLabel")}>粘贴聊天记录时会自动识别对方最后一句</Text>
+        </VStack>
+        {showContext ? <TextField textFieldStyle="plain" title="补充上下文（可选）" prompt="粘贴前几句对话，帮助理解语境" value={transcript} onChanged={setTranscript} padding={{ horizontal: 9, vertical: 7 }} background={inputBackground} overlay={roundedBorder(10)} modifiers={modifiers().frame({ maxWidth: "infinity" })} /> : null}
+        <HStack spacing={6} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
+          <Button buttonStyle="plain" action={() => setShowContext(!showContext)}>
+            <Text modifiers={modifiers().font(12).foregroundStyle("tint")}>{showContext ? "收起上下文⌃" : "＋ 添加上下文"}</Text>
+          </Button>
+          <Spacer />
+          <Button buttonStyle="borderedProminent" tint="blue" buttonBorderShape={{ roundedRectangleRadius: 14 }} action={() => { if (!busy) void generate() }}><Text modifiers={modifiers().bold()}>{busy ? "生成中" : "生成回复"}</Text></Button>
+        </HStack>
       </VStack>
       <HStack spacing={4} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
         <Text modifiers={modifiers().font(11).foregroundStyle("tertiaryLabel")}>{notice}</Text>
         <Spacer />
         {retryText ? <Button buttonStyle="plain" action={() => { if (!busy) void generate(retryText) }}><Text modifiers={modifiers().font(11).foregroundStyle("tint")}>重试</Text></Button> : null}
-        <Button buttonStyle="plain" action={() => { activeRequest?.abort(); activeRequestId++; setSentence(""); setTranscript(""); setSelectedOpponent(""); setLastInputLength(0); setRetryText(""); setHasReplyResults(false); setReplies(["先粘贴对方消息", "再点击生成回复", "点选即可插入"]); setNotice("已清空") }}><Text modifiers={modifiers().font(11).foregroundStyle("secondaryLabel")}>清空</Text></Button>
+        <Button buttonStyle="plain" action={() => { activeRequest?.abort(); activeRequestId++; setSentence(""); setTranscript(""); setShowContext(false); setSelectedOpponent(""); setLastInputLength(0); setRetryText(""); setHasReplyResults(false); setReplies(["先粘贴对方消息", "再点击生成回复", "点选即可插入"]); setNotice("已清空") }}><Text modifiers={modifiers().font(11).foregroundStyle("secondaryLabel")}>清空</Text></Button>
       </HStack>
       {replyCards}
     </VStack>
