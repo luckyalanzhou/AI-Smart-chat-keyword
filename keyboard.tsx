@@ -307,9 +307,13 @@ function SmartReplyKeyboard() {
   }, [profile])
   const replyCards = useMemo(() => hasReplyResults ? (
     <VStack alignment="leading" spacing={5} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
-      {replies.map((reply) => (
-        <Button buttonStyle="glass" buttonBorderShape={{ roundedRectangleRadius: 14 }} controlSize="large" action={() => insert(reply)}>
-          <Text modifiers={modifiers().font(14).foregroundStyle("label").padding({ horizontal: 12, vertical: 9 }).frame({ maxWidth: "infinity" })}>{reply}</Text>
+      {replies.map((reply, index) => (
+        <Button buttonStyle="plain" action={() => insert(reply)}>
+          <HStack spacing={9} padding={{ horizontal: 11, vertical: 8 }} background={mutedCardBackground} overlay={roundedBorder(12)} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
+            <Text modifiers={modifiers().font(11).bold().foregroundStyle("tint")}>{index + 1}</Text>
+            <Text modifiers={modifiers().font(14).foregroundStyle("label").frame({ maxWidth: "infinity", alignment: "leading" })}>{reply}</Text>
+            <Text modifiers={modifiers().font(11).foregroundStyle("tint")}>插入 ›</Text>
+          </HStack>
         </Button>
       ))}
     </VStack>
@@ -341,7 +345,7 @@ function SmartReplyKeyboard() {
             <Text modifiers={modifiers().font(12).foregroundStyle("tint")}>{showContext ? "收起上下文⌃" : "＋ 添加上下文"}</Text>
           </Button>
           <Spacer />
-          <Button buttonStyle="borderedProminent" tint="blue" buttonBorderShape={{ roundedRectangleRadius: 14 }} action={() => { if (!busy) void generate() }}><Text modifiers={modifiers().bold()}>{busy ? "生成中" : "生成回复"}</Text></Button>
+          <Button buttonStyle="borderedProminent" tint="blue" buttonBorderShape={{ roundedRectangleRadius: 14 }} action={() => { if (!busy) void generate() }}><Text modifiers={modifiers().bold()}>{busy ? "生成中" : hasReplyResults ? "重新生成" : "生成回复"}</Text></Button>
         </HStack>
       </VStack>
       <HStack spacing={4} modifiers={modifiers().frame({ maxWidth: "infinity" })}>

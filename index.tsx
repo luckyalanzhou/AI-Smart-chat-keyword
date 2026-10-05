@@ -43,15 +43,15 @@ function SettingsCard({ title, detail, children }: { title: string; detail?: str
   return (
     <VStack
       alignment="leading"
-      spacing={10}
-      padding={15}
-      glassEffect={{ type: "rect", cornerRadius: 20 }}
-      overlay={glassBorder(20)}
+      spacing={7}
+      padding={12}
+      glassEffect={{ type: "rect", cornerRadius: 18 }}
+      overlay={glassBorder(18)}
       modifiers={modifiers().frame({ maxWidth: "infinity" })}
     >
-      <VStack alignment="leading" spacing={2}>
+      <VStack alignment="leading" spacing={1}>
         <Text modifiers={modifiers().font(16).bold().foregroundStyle("label")}>{title}</Text>
-        {detail ? <Text modifiers={modifiers().font(12).foregroundStyle("secondaryLabel")}>{detail}</Text> : null}
+        {detail ? <Text modifiers={modifiers().font(11).foregroundStyle("secondaryLabel")}>{detail}</Text> : null}
       </VStack>
       {children}
     </VStack>
@@ -60,10 +60,19 @@ function SettingsCard({ title, detail, children }: { title: string; detail?: str
 
 function FormField({ label, children }: { label: string; children: any }) {
   return (
-    <VStack alignment="leading" spacing={2} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
-      <Text modifiers={modifiers().font(12).foregroundStyle("secondaryLabel")}>{label}</Text>
+    <VStack alignment="leading" spacing={1} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
+      <Text modifiers={modifiers().font(11).foregroundStyle("secondaryLabel")}>{label}</Text>
       {children}
     </VStack>
+  )
+}
+
+function InlineField({ label, children }: { label: string; children: any }) {
+  return (
+    <HStack spacing={8} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
+      <Text modifiers={modifiers().font(12).foregroundStyle("secondaryLabel").frame({ width: 64, alignment: "leading" })}>{label}</Text>
+      {children}
+    </HStack>
   )
 }
 
@@ -142,8 +151,8 @@ function App() {
   }, [ai, saveAI])
   const keyField = useMemo(
     () => showKey
-      ? <TextField title="API Key" prompt="粘贴服务商提供的密钥" value={ai.apiKey} onChanged={(value) => saveAI({ ...ai, apiKey: value })} />
-      : <SecureField title="API Key" prompt="粘贴服务商提供的密钥" value={ai.apiKey} onChanged={(value) => saveAI({ ...ai, apiKey: value })} />,
+      ? <TextField title="" prompt="粘贴服务商 API Key" value={ai.apiKey} onChanged={(value) => saveAI({ ...ai, apiKey: value })} modifiers={modifiers().frame({ maxWidth: "infinity" })} />
+      : <SecureField title="" prompt="粘贴服务商 API Key" value={ai.apiKey} onChanged={(value) => saveAI({ ...ai, apiKey: value })} modifiers={modifiers().frame({ maxWidth: "infinity" })} />,
     [ai, saveAI, showKey],
   )
   useEffect(() => {
@@ -185,34 +194,34 @@ function App() {
                 <Picker title="性格" value={profile.personality === "内向" ? 0 : 1} onChanged={(value: any) => saveProfile({ ...profile, personality: Number(value) === 0 ? "内向" : "外向" })} modifiers={modifiers().frame({ maxWidth: "infinity" })}><Text tag={0}>内向</Text><Text tag={1}>外向</Text></Picker>
               </FormField>
             </HStack>
-            <FormField label="表达风格">
-              <Picker title="表达风格" value={tones.indexOf(profile.tone)} onChanged={(value: any) => saveProfile({ ...profile, tone: tones[Number(value)] || "温柔" })}>{tones.map((tone, index) => <Text tag={index}>{tone}</Text>)}</Picker>
-            </FormField>
+            <InlineField label="表达风格">
+              <Picker title="表达风格" value={tones.indexOf(profile.tone)} onChanged={(value: any) => saveProfile({ ...profile, tone: tones[Number(value)] || "温柔" })} modifiers={modifiers().frame({ maxWidth: "infinity" })}>{tones.map((tone, index) => <Text tag={index}>{tone}</Text>)}</Picker>
+            </InlineField>
           </SettingsCard>
 
           <SettingsCard title="AI 服务" detail="当前设置会通过共享存储供键盘读取">
-            <FormField label="服务商">
+            <InlineField label="服务商">
               <Picker title="服务商" value={ai.provider} onChanged={(value: any) => changeProvider(value as AIProvider)} modifiers={modifiers().frame({ maxWidth: "infinity" })}>{providers.map((provider) => <Text tag={provider}>{provider}</Text>)}</Picker>
-            </FormField>
-            <FormField label="API Key">
-              <HStack spacing={8} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
+            </InlineField>
+            <InlineField label="API Key">
+              <HStack spacing={8} padding={{ horizontal: 9, vertical: 4 }} background={{ style: { light: "#F4F6FA", dark: "#282A30" }, shape: { type: "rect", cornerRadius: 10 } }} overlay={glassBorder(10)} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
                 {keyField}
                 <Button title="" systemImage={showKey ? "eye" : "eye.slash"} action={() => setShowKey(!showKey)} />
               </HStack>
-            </FormField>
-            <FormField label="模型">
+            </InlineField>
+            <InlineField label="模型">
               <HStack spacing={8} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
                 {models.length > 0
                   ? <Picker title="模型" value={ai.model} onChanged={(v: any) => saveAI({ ...ai, model: v as string })} modifiers={modifiers().frame({ maxWidth: "infinity" })}>{models.map((model) => <Text tag={model}>{model}</Text>)}</Picker>
-                  : <TextField title="模型名称" value={ai.model} onChanged={(v) => saveAI({ ...ai, model: v })} modifiers={modifiers().frame({ maxWidth: "infinity" })} />}
-                <Button title="刷新" systemImage="arrow.clockwise" action={() => { void refreshModels() }} />
+                  : <TextField title="" prompt="填写模型名称" value={ai.model} onChanged={(v) => saveAI({ ...ai, model: v })} modifiers={modifiers().frame({ maxWidth: "infinity" })} />}
+                <Button title="刷新" systemImage="arrow.clockwise" buttonStyle="plain" action={() => { void refreshModels() }} />
               </HStack>
-            </FormField>
-            <Text modifiers={modifiers().font(12).foregroundStyle("secondaryLabel")}>{modelNotice}</Text>
+            </InlineField>
+            <Text modifiers={modifiers().font(11).foregroundStyle("secondaryLabel")}>{modelNotice}</Text>
             <Button title={showAdvanced ? "收起高级设置" : "高级设置"} systemImage={showAdvanced ? "chevron.up" : "chevron.down"} buttonStyle="plain" action={() => setShowAdvanced(!showAdvanced)} />
             {showAdvanced ? (
               <FormField label="接口地址">
-                <TextField title="接口地址" value={ai.endpoint} onChanged={(v) => saveAI({ ...ai, endpoint: v })} />
+                <TextField title="" prompt="https://…/chat/completions" value={ai.endpoint} onChanged={(v) => saveAI({ ...ai, endpoint: v })} textFieldStyle="roundedBorder" />
               </FormField>
             ) : null}
           </SettingsCard>
