@@ -110,8 +110,12 @@ function uniqueQueryMap(queryParams) {
   return values
 }
 
-function parseLoopbackAuthorizationRequest(requestLine, address, port) {
-  if (!isLoopbackAddress(address)) throw new Error("授权回调只能来自本机")
+function parseLoopbackAuthorizationRequest(requestLine, address, port, listenerAddress = null) {
+  // Some embedded browser/runtime combinations may report a non-loopback peer
+  // for a loopback callback. A listener verified as bound only to loopback
+  // cannot accept remote peers; an unspecified/LAN listener still requires a
+  // loopback peer address.
+  if (!isLoopbackAddress(address) && !isLoopbackAddress(listenerAddress)) throw new Error("授权回调只能来自本机")
   const match = /^GET (\S+) HTTP\/1\.[01]$/.exec(String(requestLine || ""))
   if (!match) throw new Error("授权回调请求格式无效")
   const base = `http://127.0.0.1:${Number(port)}`

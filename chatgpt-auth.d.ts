@@ -23,7 +23,7 @@ export function createRandomValue(cryptoProvider: Crypto, byteLength?: number): 
 export function createUUID(cryptoProvider: Crypto): string
 export function buildAuthorizationURL(options: { clientId: string; hostId: string; agentName: string; redirectUri: string; state: string; nonce: string; codeChallenge: string; idTokenHint?: string; loginHint?: string }): string
 export function uniqueQueryMap(queryParams: Array<{ key: string; value: string }>): Record<string, string>
-export function parseLoopbackAuthorizationRequest(requestLine: string, address: string | null, port: number): Record<string, string>
+export function parseLoopbackAuthorizationRequest(requestLine: string, address: string | null, port: number, listenerAddress?: string | null): Record<string, string>
 export function isLoopbackAddress(address: string | null): boolean
 export function parseModelCatalog(payload: unknown): ChatGPTModel[]
 export function parseSSEBlock(block: string): { event: string; data: string }

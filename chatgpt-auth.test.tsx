@@ -53,6 +53,8 @@ async function run() {
   assert.equal(auth.isLoopbackAddress(null), false)
   assert.deepEqual(auth.parseLoopbackAuthorizationRequest("GET /auth/callback?code=abc&state=xyz HTTP/1.1", "127.0.0.1", 43210), { code: "abc", state: "xyz" })
   assert.throws(() => auth.parseLoopbackAuthorizationRequest("GET /auth/callback?state=xyz HTTP/1.1", "192.168.1.10", 43210), /本机/)
+  assert.deepEqual(auth.parseLoopbackAuthorizationRequest("GET /auth/callback?code=abc&state=xyz HTTP/1.1", "192.168.1.10", 43210, "127.0.0.1"), { code: "abc", state: "xyz" })
+  assert.throws(() => auth.parseLoopbackAuthorizationRequest("GET /auth/callback?state=xyz HTTP/1.1", "192.168.1.10", 43210, "0.0.0.0"), /本机/)
   assert.throws(() => auth.parseLoopbackAuthorizationRequest("POST /auth/callback?state=xyz HTTP/1.1", "127.0.0.1", 43210), /请求格式/)
   assert.throws(() => auth.parseLoopbackAuthorizationRequest("GET /auth/callback?state=a&state=b HTTP/1.1", "127.0.0.1", 43210), /重复参数/)
   assert.throws(() => auth.parseLoopbackAuthorizationRequest("GET http://example.com/auth/callback?state=xyz HTTP/1.1", "127.0.0.1", 43210), /地址不匹配/)

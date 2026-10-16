@@ -120,7 +120,7 @@ async function receiveAuthorizationCode(clientId: string, hostId: string, idToke
     try {
       const port = server.port
       if (typeof port !== "number" || !Number.isInteger(port) || port < 1) throw new Error("本地授权回调没有监听端口")
-      query = parseLoopbackAuthorizationRequest(`GET ${request.target} HTTP/1.1`, request.address || null, port)
+      query = parseLoopbackAuthorizationRequest(`GET ${request.target} HTTP/1.1`, request.address || null, port, server.listenAddressIPv4 || null)
     } catch (error) {
       // Parser errors contain only fixed validation messages; never echo the
       // request target or query values, which may include an authorization code.
@@ -155,8 +155,12 @@ async function receiveAuthorizationCode(clientId: string, hostId: string, idToke
   })
 
   try {
+    // Bind only to the IPv4 loopback interface so the temporary OAuth listener
+    // cannot receive callback requests from other devices on the local network.
+    server.listenAddressIPv4 = "127.0.0.1"
     const startError = server.start({ port: 0, forceIPv4: true })
     if (startError) throw new Error(`无法启动本地授权回调服务：${startError}`)
+    if (server.listenAddressIPv4 !== "127.0.0.1") throw new Error("Scripting 未能将授权回调限制在本机 loopback 地址")
     const port = server.port
     if (typeof port !== "number" || !Number.isInteger(port) || port < 1) throw new Error("Scripting 未返回本地授权回调端口")
     const redirectUri = `http://127.0.0.1:${port}${CHATGPT_CALLBACK_PATH}`
