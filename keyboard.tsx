@@ -17,13 +17,15 @@ const providerDefaults: Record<AIProvider, { endpoint: string; model: string }> 
   "通义千问": { endpoint: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions", model: "qwen-turbo" },
   "智谱AI": { endpoint: "https://open.bigmodel.cn/api/paas/v4/chat/completions", model: "glm-4-flash" },
   "月之暗面": { endpoint: "https://api.moonshot.cn/v1/chat/completions", model: "moonshot-v1-8k" },
-  "Google Gemini": { endpoint: "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent", model: "gemini-2.0-flash" },
+  "Google Gemini": { endpoint: "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent", model: "gemini-3.8-flash" },
   "自定义兼容接口": { endpoint: "https://api.openai.com/v1/chat/completions", model: "" }
 }
 const defaultAI: AIConfig = { provider: "OpenAI", ...providerDefaults.OpenAI, apiKey: "" }
 const normalizeAI = (config: AIConfig): AIConfig => config.provider === "DeepSeek" && ["deepseek-chat", "deepseek-reasoner"].includes(config.model)
   ? { ...config, model: "deepseek-v4-flash" }
-  : config
+  : config.provider === "Google Gemini" && config.model === "gemini-2.0-flash"
+    ? { ...config, model: "gemini-3.8-flash" }
+    : config
 const defaultProfile: Profile = { gender: "不透露", age: 25, mood: "普通", personality: "外向", tone: "温柔" }
 const replyTones: Profile["tone"][] = ["温柔", "活泼", "成熟", "简洁", "土味情话", "连环屁"]
 
@@ -125,7 +127,7 @@ function latestMessage(transcript: string, explicitMessage: string, opponentSend
   // is the other person's message and speakers alternate thereafter.
   const incoming = [...lines].reverse().find((line) => /^(对方|TA|他|她|对方说|TA说)\s*[:：]/i.test(line))
   if (incoming) return incoming.replace(/^(对方|TA|他|她|对方说|TA说)\s*[:：]\s*/i, "").trim()
-  if (lines.length > 1) return lines[(lines.length - 1) % 2 === 0 ? lines.length - 2 : lines.length - 1].trim()
+  if (lines.length > 1) return lines[lines.length % 2 === 0 ? lines.length - 2 : lines.length - 1].trim()
   return (lines[0] || "").trim()
 }
 
@@ -345,7 +347,21 @@ function SmartReplyKeyboard() {
         <Text modifiers={modifiers().font(11).foregroundStyle("tertiaryLabel")}>{notice}</Text>
         <Spacer />
         {retryText ? <Button buttonStyle="plain" action={() => { if (!busy) void generate(retryText) }}><Text modifiers={modifiers().font(11).foregroundStyle("tint")}>重试</Text></Button> : null}
-        <Button buttonStyle="plain" action={() => { activeRequest?.abort(); activeRequestId++; setSentence(""); setTranscript(""); setShowContext(false); setSelectedOpponent(""); setLastInputLength(0); setRetryText(""); setHasReplyResults(false); setReplies(["先粘贴对方消息", "再点击生成回复", "点选即可插入"]); setNotice("已清空") }}><Text modifiers={modifiers().font(11).foregroundStyle("secondaryLabel")}>清空</Text></Button>
+        <Button buttonStyle="plain" action={() => {
+          activeRequestId++
+          activeRequest?.abort()
+          activeRequest = null
+          setBusy(false)
+          setSentence("")
+          setTranscript("")
+          setShowContext(false)
+          setSelectedOpponent("")
+          setLastInputLength(0)
+          setRetryText("")
+          setHasReplyResults(false)
+          setReplies(["先粘贴对方消息", "再点击生成回复", "点选即可插入"])
+          setNotice("已清空")
+        }}><Text modifiers={modifiers().font(11).foregroundStyle("secondaryLabel")}>清空</Text></Button>
       </HStack>
       {replyCards}
     </VStack>

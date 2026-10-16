@@ -7,19 +7,22 @@ const moods: Mood[] = ["开心", "忙碌", "疲惫", "难过", "生气", "暧昧
 const tones: Profile["tone"][] = ["温柔", "活泼", "成熟", "简洁", "土味情话", "连环屁"]
 type AIProvider = "OpenAI" | "DeepSeek" | "通义千问" | "智谱AI" | "月之暗面" | "Google Gemini" | "自定义兼容接口"
 type AIConfig = { provider: AIProvider; endpoint: string; model: string; apiKey: string }
+type AIProviderPreferences = Partial<Record<AIProvider, { endpoint: string; model: string }>>
 const providerDefaults: Record<AIProvider, { endpoint: string; model: string }> = {
   "OpenAI": { endpoint: "https://api.openai.com/v1/chat/completions", model: "gpt-4o-mini" },
   "DeepSeek": { endpoint: "https://api.deepseek.com/chat/completions", model: "deepseek-v4-flash" },
   "通义千问": { endpoint: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions", model: "qwen-turbo" },
   "智谱AI": { endpoint: "https://open.bigmodel.cn/api/paas/v4/chat/completions", model: "glm-4-flash" },
   "月之暗面": { endpoint: "https://api.moonshot.cn/v1/chat/completions", model: "moonshot-v1-8k" },
-  "Google Gemini": { endpoint: "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent", model: "gemini-2.0-flash" },
+  "Google Gemini": { endpoint: "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent", model: "gemini-3.8-flash" },
   "自定义兼容接口": { endpoint: "https://api.openai.com/v1/chat/completions", model: "" }
 }
 const defaultAI: AIConfig = { provider: "OpenAI", ...providerDefaults.OpenAI, apiKey: "" }
 const normalizeAI = (config: AIConfig): AIConfig => config.provider === "DeepSeek" && ["deepseek-chat", "deepseek-reasoner"].includes(config.model)
   ? { ...config, model: "deepseek-v4-flash" }
-  : config
+  : config.provider === "Google Gemini" && config.model === "gemini-2.0-flash"
+    ? { ...config, model: "gemini-3.8-flash" }
+    : config
 let modelRequestId = 0
 let modelRequest: AbortController | null = null
 
@@ -53,6 +56,9 @@ function App() {
     modelRequest = null
     setAI(next)
     Storage.set("ai", next, { shared: true })
+    const providerPreferences = Storage.get<AIProviderPreferences>("aiProviderPreferences", { shared: true }) || {}
+    providerPreferences[next.provider] = { endpoint: next.endpoint, model: next.model }
+    Storage.set("aiProviderPreferences", providerPreferences, { shared: true })
   }, [])
   const refreshModels = useCallback(async () => {
     const requestId = ++modelRequestId
@@ -96,10 +102,13 @@ function App() {
     setModelNotice("正在准备读取模型…")
     setShowAdvanced(provider === "自定义兼容接口")
     const storedKeys = Storage.get<Record<AIProvider, string>>("aiKeys", { shared: true }) || {} as Record<AIProvider, string>
+    const providerPreferences = Storage.get<AIProviderPreferences>("aiProviderPreferences", { shared: true }) || {}
     storedKeys[ai.provider] = ai.apiKey
-    const next = { ...ai, provider, ...providerDefaults[provider], apiKey: storedKeys[provider] || "" }
+    providerPreferences[ai.provider] = { endpoint: ai.endpoint, model: ai.model }
+    const next = { ...ai, provider, ...(providerPreferences[provider] || providerDefaults[provider]), apiKey: storedKeys[provider] || "" }
     storedKeys[provider] = next.apiKey
     Storage.set("aiKeys", storedKeys, { shared: true })
+    Storage.set("aiProviderPreferences", providerPreferences, { shared: true })
     saveAI(next)
   }, [ai, saveAI])
   const keyField = useMemo(
@@ -114,8 +123,15 @@ function App() {
       storedKeys[ai.provider] = ai.apiKey
       Storage.set("aiKeys", storedKeys, { shared: true })
     }
-    if (ai.apiKey.trim()) void refreshModels()
-  }, [ai.provider])
+    setModels([])
+    if (!ai.apiKey.trim()) {
+      setModelNotice("填写 API Key 后会自动读取可用模型")
+      return
+    }
+    setModelNotice("正在准备读取模型…")
+    const timeout = setTimeout(() => { void refreshModels() }, 650)
+    return () => clearTimeout(timeout)
+  }, [ai.provider, ai.apiKey, ai.endpoint])
 
   return (
     <NavigationStack>

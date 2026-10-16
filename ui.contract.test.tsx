@@ -34,6 +34,23 @@ const checks = [
     assert.match(settingsSource, /title=\{showAdvanced \? "收起接口设置" : "自定义接口地址"\}/)
     assert.match(settingsSource, /showAdvanced \? <TextField title="接口地址" prompt="https:\/\/…\/chat\/completions"/)
   }],
+  ["provider changes preserve each provider's endpoint and selected model", () => {
+    assert.match(settingsSource, /type AIProviderPreferences = Partial<Record<AIProvider, \{ endpoint: string; model: string \}>>/)
+    assert.match(settingsSource, /providerPreferences\[ai\.provider\] = \{ endpoint: ai\.endpoint, model: ai\.model \}/)
+    assert.match(settingsSource, /providerPreferences\[provider\] \|\| providerDefaults\[provider\]/)
+    assert.match(settingsSource, /Storage\.set\("aiProviderPreferences", providerPreferences, \{ shared: true \}\)/)
+  }],
+  ["Gemini uses a supported default and migrates the retired model", () => {
+    for (const source of [settingsSource, keyboardSource]) {
+      assert.match(source, /"Google Gemini": \{ endpoint: "https:\/\/generativelanguage\.googleapis\.com\/v1beta\/models\/gemini-3\.8-flash:generateContent", model: "gemini-3\.8-flash" \}/)
+      assert.match(source, /config\.model === "gemini-2\.0-flash"[\s\S]*?model: "gemini-3\.8-flash"/)
+    }
+  }],
+  ["model refresh is debounced and retriggered after API key or endpoint changes", () => {
+    assert.match(settingsSource, /const timeout = setTimeout\(\(\) => \{ void refreshModels\(\) \}, 650\)/)
+    assert.match(settingsSource, /\}, \[ai\.provider, ai\.apiKey, ai\.endpoint\]\)/)
+    assert.match(settingsSource, /return \(\) => clearTimeout\(timeout\)/)
+  }],
   ["keyboard uses adaptive system surface and native rounded inputs", () => {
     assert.match(keyboardSource, /const keyboardBackground = "secondarySystemBackground"/)
     assert.equal((keyboardSource.match(/textFieldStyle="roundedBorder"/g) || []).length, 2)
@@ -51,6 +68,24 @@ const checks = [
     }
     assert.match(keyboardSource, /busy \? "生成中" : hasReplyResults \? "重新生成" : "生成回复"/)
     assert.match(keyboardSource, /CustomKeyboard\.insertText\(text\)/)
+  }],
+  ["clearing an in-flight request releases the busy state", () => {
+    assert.match(keyboardSource, /activeRequestId\+\+[\s\S]{0,80}activeRequest\?\.abort\(\)[\s\S]{0,80}setBusy\(false\)/)
+    assert.match(keyboardSource, /if \(!busy\) void generate\(\)/)
+  }],
+  ["plain unlabelled transcripts select the latest incoming alternating line", () => {
+    const match = keyboardSource.match(/if \(lines\.length > 1\) return lines\[(.+?)\]\.trim\(\)/)
+    assert.ok(match, "missing plain-transcript selection branch")
+    const selectedIndex = new Function("lines", `return ${match[1]}`)
+    const cases = [
+      [["对方：周末有空吗？", "我：有呀"], 0],
+      [["对方：周末有空吗？", "我：有呀", "对方：那去看电影？"], 2],
+      [["对方：第一句", "我：第二句", "对方：第三句", "我：第四句"], 2],
+      [["对方：第一句", "我：第二句", "对方：第三句", "我：第四句", "对方：第五句"], 4],
+    ]
+    for (const [lines, expectedIndex] of cases) {
+      assert.equal(selectedIndex(lines), expectedIndex, `wrong incoming line for ${lines.length} transcript lines`)
+    }
   }],
   ["keyboard height stays within Scripting's recommended range", () => {
     assert.match(keyboardSource, /CustomKeyboard\.requestHeight\(showContext \|\| hasReplyResults \? 360 : 270\)/)
