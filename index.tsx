@@ -121,8 +121,11 @@ async function receiveAuthorizationCode(clientId: string, hostId: string, idToke
       const port = server.port
       if (typeof port !== "number" || !Number.isInteger(port) || port < 1) throw new Error("本地授权回调没有监听端口")
       query = parseLoopbackAuthorizationRequest(`GET ${request.target} HTTP/1.1`, request.address || null, port)
-    } catch {
-      return authorizationHttpResponse(400, "授权回调无效，请返回设置后重试。")
+    } catch (error) {
+      // Parser errors contain only fixed validation messages; never echo the
+      // request target or query values, which may include an authorization code.
+      const reason = error instanceof Error ? error.message : "请求格式无效"
+      return authorizationHttpResponse(400, `授权回调无效：${reason}。请返回设置后重试。`)
     }
     if (query.state !== state) return authorizationHttpResponse(400, "授权响应无法验证，请返回设置后重试。")
     if (query.error) {

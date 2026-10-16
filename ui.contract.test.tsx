@@ -59,6 +59,7 @@ const checks = [
     assert.match(settingsSource, /server\.registerAsyncHandler\(CHATGPT_CALLBACK_PATH/)
     assert.match(settingsSource, /server\.start\(\{ port: 0, forceIPv4: true \}\)/)
     assert.match(settingsSource, /parseLoopbackAuthorizationRequest\(`GET \$\{request\.target\} HTTP\/1\.1`, request\.address \|\| null, port\)/)
+    assert.match(settingsSource, /Parser errors contain only fixed validation messages; never echo the[\s\S]*?const reason = error instanceof Error \? error\.message : "请求格式无效"[\s\S]*?授权回调无效：\$\{reason\}/)
     assert.match(settingsSource, /if \(server\.state !== "stopped"\) server\.stop\(\)/)
     assert.match(settingsSource, /const CHATGPT_CALLBACK_PATH = "\/auth\/callback"/)
     assert.match(settingsSource, /http:\/\/127\.0\.0\.1:\$\{port\}\$\{CHATGPT_CALLBACK_PATH\}/)
