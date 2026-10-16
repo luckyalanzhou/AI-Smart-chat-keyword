@@ -51,12 +51,15 @@ const checks = [
     assert.match(settingsSource, /if \(authMode !== "apiKey"\) return[\s\S]*?\}, \[authMode, ai\.provider, ai\.apiKey, ai\.endpoint\]\)/)
     assert.match(settingsSource, /return \(\) => clearTimeout\(timeout\)/)
   }],
-  ["ChatGPT OAuth uses a loopback-only TCP listener, PKCE, state, nonce, validated identity and account-specific models", () => {
-    assert.match(settingsSource, /import \{ createServer, type Socket \} from "node:net"/)
-    assert.match(settingsSource, /server\.listen\(\{ port: 0, host: "127\.0\.0\.1" \}/)
+  ["ChatGPT OAuth uses Scripting's native HTTP server with loopback validation, PKCE, state, nonce and account-specific models", () => {
+    assert.doesNotMatch(settingsSource, /node:net/)
+    assert.match(settingsSource, /new runtime\.HttpServer\(\)/)
+    assert.match(settingsSource, /server\.registerAsyncHandler\(CHATGPT_CALLBACK_PATH/)
+    assert.match(settingsSource, /server\.start\(\{ port: 0, forceIPv4: true \}\)/)
+    assert.match(settingsSource, /parseLoopbackAuthorizationRequest\(`GET \$\{request\.target\} HTTP\/1\.1`, request\.address \|\| null, port\)/)
+    assert.match(settingsSource, /if \(server\.state !== "stopped"\) server\.stop\(\)/)
     assert.match(settingsSource, /const CHATGPT_CALLBACK_PATH = "\/auth\/callback"/)
     assert.match(settingsSource, /http:\/\/127\.0\.0\.1:\$\{port\}\$\{CHATGPT_CALLBACK_PATH\}/)
-    assert.match(settingsSource, /host: "127\.0\.0\.1"/)
     assert.match(settingsSource, /Safari\.openURL\(authorizationURL\)/)
     assert.match(settingsSource, /query\.state !== state/)
     assert.match(settingsSource, /verifyIdentityToken\(tokenData\.id_token, authorization\.nonce, authorization\.clientId/)

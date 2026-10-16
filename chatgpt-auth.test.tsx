@@ -47,6 +47,7 @@ async function run() {
   assert.deepEqual(auth.uniqueQueryMap([{ key: "state", value: "a" }, { key: "code", value: "b" }]), { state: "a", code: "b" })
   assert.equal(auth.isLoopbackAddress("127.0.0.1"), true)
   assert.equal(auth.isLoopbackAddress("::1"), true)
+  assert.equal(auth.isLoopbackAddress("::ffff:127.0.0.1"), true)
   assert.equal(auth.isLoopbackAddress("192.168.1.10"), false)
   assert.equal(auth.isLoopbackAddress("127.999.0.1"), false)
   assert.equal(auth.isLoopbackAddress(null), false)

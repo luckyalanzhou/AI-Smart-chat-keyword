@@ -1,5 +1,4 @@
 import { Navigation, NavigationStack, Form, Section, HStack, Text, TextField, SecureField, Button, Picker, modifiers, useState, useEffect, useCallback, useMemo, fetch, Script } from "scripting"
-import { createServer, type Socket } from "node:net"
 import type { ChatGPTCredential, ChatGPTModel } from "./chatgpt-auth.js"
 import { buildAuthorizationURL, createCredentialRecord, createPKCE, createRandomValue, createUUID, parseLoopbackAuthorizationRequest, parseModelCatalog, refreshCredentialWithLatest, revokeCredential, verifyIdentityToken, withRefreshLease } from "./chatgpt-auth.js"
 type Gender = "女" | "男" | "不透露"
@@ -93,114 +92,70 @@ function authPage(message: string) {
   return `<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>智能聊天键盘</title><main style="font:17px -apple-system;padding:32px;text-align:center">${message}<p>现在可以返回智能聊天键盘。</p></main>`
 }
 
-function respondToAuthorizationSocket(socket: Socket, statusCode: number, message: string) {
-  const body = authPage(message)
-  const byteLength = new TextEncoder().encode(body).length
-  const reason = statusCode === 200 ? "OK" : statusCode === 404 ? "Not Found" : "Bad Request"
-  socket.end(`HTTP/1.1 ${statusCode} ${reason}\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: ${byteLength}\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n${body}`)
+function authorizationHttpResponse(statusCode: number, message: string) {
+  const runtime = globalThis as any
+  const body = runtime.HttpResponseBody.html(authPage(message))
+  return statusCode === 400 ? runtime.HttpResponse.badRequest(body) : runtime.HttpResponse.ok(body)
 }
 
 async function receiveAuthorizationCode(clientId: string, hostId: string, idTokenHint: string, loginHint: string) {
   const pkce = await createPKCE(crypto)
   const state = createRandomValue(crypto)
   const nonce = createRandomValue(crypto)
-  const peers = new Set<Socket>()
+  const runtime = globalThis as any
+  if (typeof runtime.HttpServer !== "function" || typeof runtime.HttpResponse?.ok !== "function" || typeof runtime.HttpResponse?.badRequest !== "function" || typeof runtime.HttpResponseBody?.html !== "function") {
+    throw new Error("当前 Scripting 环境没有可用的本地授权回调服务。请更新 Scripting，并从主 App 中运行脚本。")
+  }
   let settle: ((value: { code: string; clientId: string }) => void) | null = null
   let fail: ((error: Error) => void) | null = null
   let settled = false
-  let isListening = false
   let timeout: ReturnType<typeof setTimeout> | null = null
   const callback = new Promise<{ code: string; clientId: string }>((resolve, reject) => { settle = resolve; fail = reject })
   void callback.catch(() => {})
-  const server = createServer({ allowHalfOpen: false }, (socket) => {
-    peers.add(socket)
-    socket.on("close", () => peers.delete(socket))
-    socket.on("error", () => peers.delete(socket))
-    socket.setTimeout(15_000, () => socket.destroy())
-    let requestData = ""
-    let handled = false
-    socket.on("data", (data) => {
-      if (handled) return
-      requestData += data.toString()
-      if (requestData.length > 16_384) {
-        handled = true
-        respondToAuthorizationSocket(socket, 400, "授权回调请求过长。")
-        return
-      }
-      const headerEnd = requestData.indexOf("\r\n\r\n")
-      if (headerEnd < 0) return
-      handled = true
-      const requestLine = requestData.slice(0, requestData.indexOf("\r\n"))
-      let query: Record<string, string>
-      try {
-        const address = socket.remoteAddress || null
-        const addressInfo = server.address()
-        if (!addressInfo || typeof addressInfo === "string") throw new Error("本地授权回调没有监听端口")
-        query = parseLoopbackAuthorizationRequest(requestLine, address, addressInfo.port)
-      } catch {
-        respondToAuthorizationSocket(socket, 400, "授权回调无效，请返回应用后重试。")
-        return
-      }
-      if (query.state !== state) {
-        respondToAuthorizationSocket(socket, 400, "授权响应无法验证，请返回应用后重试。")
-        return
-      }
-      if (settled) {
-        respondToAuthorizationSocket(socket, 400, "此授权请求已结束。")
-        return
-      }
-      if (query.error) {
-        settled = true
-        fail?.(new Error(query.error === "access_denied" ? "你取消了 ChatGPT 授权" : "ChatGPT 授权未能完成"))
-        respondToAuthorizationSocket(socket, 200, "授权未完成。")
-        return
-      }
-      const returnedClientId = query.client_id || ""
-      if (clientId === "dynamic_agent_client" && (!returnedClientId || returnedClientId === "dynamic_agent_client")) {
-        settled = true
-        fail?.(new Error("ChatGPT 没有返回新注册的客户端标识，请重新开始登录"))
-        respondToAuthorizationSocket(socket, 200, "授权信息不完整。")
-        return
-      }
-      if (clientId !== "dynamic_agent_client" && returnedClientId && returnedClientId !== clientId) {
-        settled = true
-        fail?.(new Error("ChatGPT 返回的账号注册与当前选择不一致"))
-        respondToAuthorizationSocket(socket, 200, "授权账号与当前选择不一致。")
-        return
-      }
-      if (!query.code) {
-        settled = true
-        fail?.(new Error("ChatGPT 回调没有包含授权码"))
-        respondToAuthorizationSocket(socket, 200, "授权信息不完整。")
-        return
-      }
-      settled = true
-      settle?.({ code: query.code, clientId: clientId === "dynamic_agent_client" ? returnedClientId : clientId })
-      respondToAuthorizationSocket(socket, 200, "ChatGPT 授权已返回。")
-    })
-  })
-  server.on("error", (error: Error) => {
-    if (isListening && !settled) {
-      settled = true
-      fail?.(new Error(`本地授权回调失败：${error.message}`))
+  const server = new runtime.HttpServer()
+  server.registerAsyncHandler(CHATGPT_CALLBACK_PATH, async (request: any) => {
+    if (request.method !== "GET") return authorizationHttpResponse(400, "授权回调请求格式无效。")
+    if (settled) return authorizationHttpResponse(400, "此授权请求已结束。")
+    let query: Record<string, string>
+    try {
+      const port = server.port
+      if (typeof port !== "number" || !Number.isInteger(port) || port < 1) throw new Error("本地授权回调没有监听端口")
+      query = parseLoopbackAuthorizationRequest(`GET ${request.target} HTTP/1.1`, request.address || null, port)
+    } catch {
+      return authorizationHttpResponse(400, "授权回调无效，请返回设置后重试。")
     }
+    if (query.state !== state) return authorizationHttpResponse(400, "授权响应无法验证，请返回设置后重试。")
+    if (query.error) {
+      settled = true
+      fail?.(new Error(query.error === "access_denied" ? "你取消了 ChatGPT 授权" : "ChatGPT 授权未能完成"))
+      return authorizationHttpResponse(200, "授权未完成。")
+    }
+    const returnedClientId = query.client_id || ""
+    if (clientId === "dynamic_agent_client" && (!returnedClientId || returnedClientId === "dynamic_agent_client")) {
+      settled = true
+      fail?.(new Error("ChatGPT 没有返回新注册的客户端标识，请重新开始登录"))
+      return authorizationHttpResponse(200, "授权信息不完整。")
+    }
+    if (clientId !== "dynamic_agent_client" && returnedClientId && returnedClientId !== clientId) {
+      settled = true
+      fail?.(new Error("ChatGPT 返回的账号注册与当前选择不一致"))
+      return authorizationHttpResponse(200, "授权账号与当前选择不一致。")
+    }
+    if (!query.code) {
+      settled = true
+      fail?.(new Error("ChatGPT 回调没有包含授权码"))
+      return authorizationHttpResponse(200, "授权信息不完整。")
+    }
+    settled = true
+    settle?.({ code: query.code, clientId: clientId === "dynamic_agent_client" ? returnedClientId : clientId })
+    return authorizationHttpResponse(200, "ChatGPT 授权已返回。")
   })
 
   try {
-    const port = await new Promise<number>((resolve, reject) => {
-      const onListenError = (error: Error) => reject(error)
-      server.once("error", onListenError)
-      server.listen({ port: 0, host: "127.0.0.1" }, () => {
-        server.removeListener("error", onListenError)
-        isListening = true
-        const address = server.address()
-        if (!address || typeof address === "string" || address.address !== "127.0.0.1") {
-          reject(new Error("本地授权回调未绑定到 127.0.0.1"))
-          return
-        }
-        resolve(address.port)
-      })
-    })
+    const startError = server.start({ port: 0, forceIPv4: true })
+    if (startError) throw new Error(`无法启动本地授权回调服务：${startError}`)
+    const port = server.port
+    if (typeof port !== "number" || !Number.isInteger(port) || port < 1) throw new Error("Scripting 未返回本地授权回调端口")
     const redirectUri = `http://127.0.0.1:${port}${CHATGPT_CALLBACK_PATH}`
     const authorizationURL = buildAuthorizationURL({
       clientId,
@@ -225,8 +180,7 @@ async function receiveAuthorizationCode(clientId: string, hostId: string, idToke
     return { ...result, redirectUri, verifier: pkce.verifier, nonce }
   } finally {
     if (timeout) clearTimeout(timeout)
-    for (const peer of peers) peer.destroy()
-    if (server.listening) await new Promise<void>((resolve) => server.close(() => resolve()))
+    if (server.state !== "stopped") server.stop()
   }
 }
 
