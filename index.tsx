@@ -89,7 +89,7 @@ function readChatGPTAccount(): ChatGPTAccount | null {
 }
 
 function authPage(message: string) {
-  return `<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>智能聊天键盘</title><main style="font:17px -apple-system;padding:32px;text-align:center">${message}<p>现在可以返回智能聊天键盘。</p></main>`
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>智能聊天键盘</title></head><body><main style="font:17px -apple-system;padding:32px;text-align:center">${message}<p>查看上方状态后，关闭此页面返回脚本。</p></main></body></html>`
 }
 
 function authorizationHttpResponse(statusCode: number, message: string) {
@@ -103,8 +103,8 @@ async function receiveAuthorizationCode(clientId: string, hostId: string, idToke
   const state = createRandomValue(crypto)
   const nonce = createRandomValue(crypto)
   const runtime = globalThis as any
-  if (typeof runtime.HttpServer !== "function" || typeof runtime.HttpResponse?.ok !== "function" || typeof runtime.HttpResponse?.badRequest !== "function" || typeof runtime.HttpResponseBody?.html !== "function") {
-    throw new Error("当前 Scripting 环境没有可用的本地授权回调服务。请更新 Scripting，并从主 App 中运行脚本。")
+  if (typeof runtime.HttpServer !== "function" || typeof runtime.HttpResponse?.ok !== "function" || typeof runtime.HttpResponse?.badRequest !== "function" || typeof runtime.HttpResponseBody?.html !== "function" || typeof Safari.present !== "function") {
+    throw new Error("当前 Scripting 环境不支持应用内授权页面或本地回调服务。请更新 Scripting，并从主 App 中运行脚本。")
   }
   let settle: ((value: { code: string; clientId: string }) => void) | null = null
   let fail: ((error: Error) => void) | null = null
@@ -174,8 +174,11 @@ async function receiveAuthorizationCode(clientId: string, hostId: string, idToke
         fail?.(new Error("等待 ChatGPT 授权超时；请返回设置后重试"))
       }
     }, 180_000)
-    const opened = await Safari.openURL(authorizationURL)
-    if (!opened) throw new Error("无法打开系统浏览器进行 ChatGPT 授权")
+    await Safari.present(authorizationURL, true)
+    if (!settled) {
+      settled = true
+      fail?.(new Error("你关闭了 ChatGPT 登录页面，授权尚未完成"))
+    }
     const result = await callback
     return { ...result, redirectUri, verifier: pkce.verifier, nonce }
   } finally {

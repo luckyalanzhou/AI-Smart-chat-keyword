@@ -53,6 +53,8 @@ const checks = [
   }],
   ["ChatGPT OAuth uses Scripting's native HTTP server with loopback validation, PKCE, state, nonce and account-specific models", () => {
     assert.doesNotMatch(settingsSource, /node:net/)
+    assert.match(settingsSource, /<!doctype html><html><head><meta charset="utf-8">/)
+    assert.match(settingsSource, /关闭此页面返回脚本/)
     assert.match(settingsSource, /new runtime\.HttpServer\(\)/)
     assert.match(settingsSource, /server\.registerAsyncHandler\(CHATGPT_CALLBACK_PATH/)
     assert.match(settingsSource, /server\.start\(\{ port: 0, forceIPv4: true \}\)/)
@@ -60,7 +62,8 @@ const checks = [
     assert.match(settingsSource, /if \(server\.state !== "stopped"\) server\.stop\(\)/)
     assert.match(settingsSource, /const CHATGPT_CALLBACK_PATH = "\/auth\/callback"/)
     assert.match(settingsSource, /http:\/\/127\.0\.0\.1:\$\{port\}\$\{CHATGPT_CALLBACK_PATH\}/)
-    assert.match(settingsSource, /Safari\.openURL\(authorizationURL\)/)
+    assert.match(settingsSource, /await Safari\.present\(authorizationURL, true\)/)
+    assert.match(settingsSource, /if \(!settled\) \{\s*settled = true\s*fail\?\.\(new Error\("你关闭了 ChatGPT 登录页面，授权尚未完成"\)\)/)
     assert.match(settingsSource, /query\.state !== state/)
     assert.match(settingsSource, /verifyIdentityToken\(tokenData\.id_token, authorization\.nonce, authorization\.clientId/)
     assert.match(settingsSource, /refreshChatGPTModels/)
