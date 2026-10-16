@@ -19,8 +19,8 @@ const checks = [
     assert.doesNotMatch(settingsSource, /SettingsCard|glassEffect|glassBorder|<ScrollView/)
   }],
   ["profile and provider choices use native menu pickers", () => {
-    assert.equal((settingsSource.match(/<Picker\b[^>]*pickerStyle="menu"/g) || []).length, 6)
-    for (const title of ["性别", "当前状态", "性格", "表达风格", "服务商", "模型"]) {
+    assert.equal((settingsSource.match(/<Picker\b[^>]*pickerStyle="menu"/g) || []).length, 8)
+    for (const title of ["性别", "当前状态", "性格", "表达风格", "接入方式", "服务商", "模型"]) {
       assert.ok(settingsSource.includes(`title="${title}" pickerStyle="menu"`), `missing native menu picker: ${title}`)
     }
   }],
@@ -48,8 +48,46 @@ const checks = [
   }],
   ["model refresh is debounced and retriggered after API key or endpoint changes", () => {
     assert.match(settingsSource, /const timeout = setTimeout\(\(\) => \{ void refreshModels\(\) \}, 650\)/)
-    assert.match(settingsSource, /\}, \[ai\.provider, ai\.apiKey, ai\.endpoint\]\)/)
+    assert.match(settingsSource, /if \(authMode !== "apiKey"\) return[\s\S]*?\}, \[authMode, ai\.provider, ai\.apiKey, ai\.endpoint\]\)/)
     assert.match(settingsSource, /return \(\) => clearTimeout\(timeout\)/)
+  }],
+  ["ChatGPT OAuth uses a loopback-only TCP listener, PKCE, state, nonce, validated identity and account-specific models", () => {
+    assert.match(settingsSource, /import \{ createServer, type Socket \} from "node:net"/)
+    assert.match(settingsSource, /server\.listen\(\{ port: 0, host: "127\.0\.0\.1" \}/)
+    assert.match(settingsSource, /const CHATGPT_CALLBACK_PATH = "\/auth\/callback"/)
+    assert.match(settingsSource, /http:\/\/127\.0\.0\.1:\$\{port\}\$\{CHATGPT_CALLBACK_PATH\}/)
+    assert.match(settingsSource, /host: "127\.0\.0\.1"/)
+    assert.match(settingsSource, /Safari\.openURL\(authorizationURL\)/)
+    assert.match(settingsSource, /query\.state !== state/)
+    assert.match(settingsSource, /verifyIdentityToken\(tokenData\.id_token, authorization\.nonce, authorization\.clientId/)
+    assert.match(settingsSource, /refreshChatGPTModels/)
+    assert.match(settingsSource, /Keychain\.set\(CHATGPT_CREDENTIAL_KEY/)
+    assert.match(settingsSource, /withRefreshLease/)
+    assert.match(keyboardSource, /withRefreshLease/)
+    assert.doesNotMatch(settingsSource, /Storage\.set\([^\n]*(?:accessToken|refreshToken|idToken)/)
+  }],
+  ["ChatGPT account connection is separate from API Key mode and shows usage management", () => {
+    assert.match(settingsSource, /type AIAuthMode = "apiKey" \| "chatgptPlan"/)
+    assert.match(settingsSource, /Storage\.set\(CHATGPT_MODE_KEY, mode, \{ shared: true \}\)/)
+    assert.match(settingsSource, /"Continue with ChatGPT"/)
+    assert.match(settingsSource, /title="管理 ChatGPT 用量"/)
+    assert.match(settingsSource, /if \(!Storage\.get<boolean>\(CHATGPT_NOTICE_KEY, \{ shared: true \}\)\) \{[\s\S]*?await Dialog\.alert/)
+    assert.match(settingsSource, /只有你主动粘贴对方消息或点击生成后，对方消息、可选聊天上下文和回复风格资料才会发送给 OpenAI/)
+    assert.match(settingsSource, /setSelectedChatGPTModel\(model\); Storage\.set\(CHATGPT_MODEL_KEY, model/)
+    assert.match(settingsSource, /Storage\.set\("ai", next, \{ shared: true \}\)/)
+  }],
+  ["ChatGPT plan requests use only Responses streaming without unsupported parameters or API-key fallback", () => {
+    assert.match(keyboardSource, /fetch\("https:\/\/api\.openai\.com\/v1\/responses"/)
+    assert.match(keyboardSource, /store: false, stream: true/)
+    assert.match(keyboardSource, /postChatGPTResponses\(chatGPTModel, credential, SYSTEM_PROMPT, planInput/)
+    assert.match(keyboardSource, /if \(authMode === "apiKey" && !ai\.apiKey\.trim\(\)\)/)
+    assert.match(keyboardSource, /response\.completed/)
+    assert.match(keyboardSource, /subscription_sharing_usage_unavailable/)
+    assert.match(keyboardSource, /使用 ChatGPT 计划/)
+    assert.match(keyboardSource, /管理用量/)
+    assert.match(keyboardSource, /usageLimitReached[\s\S]*?buttonStyle="borderedProminent" tint="blue"/)
+    assert.match(keyboardSource, /retryText && !usageLimitReached/)
+    assert.doesNotMatch(keyboardSource, /store: false, stream: true[^\n]*temperature|store: false, stream: true[^\n]*max_output_tokens/)
   }],
   ["keyboard uses adaptive system surface and native rounded inputs", () => {
     assert.match(keyboardSource, /const keyboardBackground = "secondarySystemBackground"/)

@@ -1,4 +1,6 @@
 import { VStack, HStack, Spacer, Text, TextField, Button, Picker, modifiers, useState, useEffect, useCallback, useMemo, fetch } from "scripting"
+import type { ChatGPTCredential } from "./chatgpt-auth.js"
+import { createRandomValue, extractResponsesText, refreshCredentialWithLatest, splitSSEEvents, withRefreshLease } from "./chatgpt-auth.js"
 type Gender = "女" | "男" | "不透露"
 type Mood = "开心" | "忙碌" | "疲惫" | "难过" | "生气" | "暧昧" | "相亲" | "普通"
 type Profile = {
@@ -11,6 +13,7 @@ type Profile = {
 
 type AIProvider = "OpenAI" | "DeepSeek" | "通义千问" | "智谱AI" | "月之暗面" | "Google Gemini" | "自定义兼容接口"
 type AIConfig = { provider: AIProvider; endpoint: string; model: string; apiKey: string }
+type AIAuthMode = "apiKey" | "chatgptPlan"
 const providerDefaults: Record<AIProvider, { endpoint: string; model: string }> = {
   "OpenAI": { endpoint: "https://api.openai.com/v1/chat/completions", model: "gpt-4o-mini" },
   "DeepSeek": { endpoint: "https://api.deepseek.com/chat/completions", model: "deepseek-v4-flash" },
@@ -21,6 +24,11 @@ const providerDefaults: Record<AIProvider, { endpoint: string; model: string }> 
   "自定义兼容接口": { endpoint: "https://api.openai.com/v1/chat/completions", model: "" }
 }
 const defaultAI: AIConfig = { provider: "OpenAI", ...providerDefaults.OpenAI, apiKey: "" }
+const CHATGPT_CREDENTIAL_KEY = "ai-smart-chat-keyword.chatgpt.credentials.v1"
+const CHATGPT_REFRESH_LOCK_KEY = "ai-smart-chat-keyword.chatgpt.refresh-lock.v1"
+const CHATGPT_MODEL_KEY = "ai-smart-chat-keyword.chatgpt.model"
+const CHATGPT_MODE_KEY = "ai-smart-chat-keyword.chatgpt.authMode"
+const CHATGPT_USAGE_URL = "https://chatgpt.com/settings/usage"
 const normalizeAI = (config: AIConfig): AIConfig => config.provider === "DeepSeek" && ["deepseek-chat", "deepseek-reasoner"].includes(config.model)
   ? { ...config, model: "deepseek-v4-flash" }
   : config.provider === "Google Gemini" && config.model === "gemini-2.0-flash"
@@ -189,6 +197,112 @@ async function postJSON(url: string, headers: any, body: any, signal: AbortSigna
   throw lastError || new Error("网络请求失败")
 }
 
+function readChatGPTCredential(): ChatGPTCredential | null {
+  try {
+    const value = Keychain.get(CHATGPT_CREDENTIAL_KEY)
+    if (!value) return null
+    const parsed = JSON.parse(value)
+    return parsed && parsed.version === 1
+      && typeof parsed.clientId === "string" && parsed.clientId
+      && typeof parsed.hostId === "string" && parsed.hostId
+      && typeof parsed.subject === "string" && parsed.subject
+      && typeof parsed.accessToken === "string" && parsed.accessToken
+      && typeof parsed.refreshToken === "string" && parsed.refreshToken
+      && Array.isArray(parsed.scopes) && Number.isFinite(parsed.expiresAt)
+      ? parsed as ChatGPTCredential : null
+  } catch { return null }
+}
+
+type ChatGPTRefreshLease = { owner: string; expiresAt: number }
+function readChatGPTRefreshLease(key: string): ChatGPTRefreshLease | null {
+  try {
+    const value = Keychain.get(key)
+    const parsed = value ? JSON.parse(value) : null
+    return parsed && typeof parsed.owner === "string" && Number.isFinite(parsed.expiresAt) ? parsed as ChatGPTRefreshLease : null
+  } catch { return null }
+}
+function writeChatGPTRefreshLease(key: string, lease: ChatGPTRefreshLease | null) {
+  return lease ? Keychain.set(key, JSON.stringify(lease)) : Keychain.remove(key)
+}
+function withChatGPTRefreshLease<T>(credential: ChatGPTCredential, operation: () => Promise<T>) {
+  const key = `${CHATGPT_REFRESH_LOCK_KEY}.${credential.clientId}`
+  return withRefreshLease(
+    createRandomValue(crypto, 16),
+    () => readChatGPTRefreshLease(key),
+    (lease) => writeChatGPTRefreshLease(key, lease),
+    operation,
+  )
+}
+
+async function chatGPTAccessCredential() {
+  const credential = readChatGPTCredential()
+  if (!credential) throw new Error("请先在主 App 设置中登录 ChatGPT 账号")
+  if (!credential.scopes?.includes("chatgpt.tokens.use.direct")) throw new Error("当前 ChatGPT 授权未包含计划用量权限，请重新登录授权")
+  return refreshCredentialWithLatest(credential, fetch, readChatGPTCredential, (refreshed) => {
+    if (!Keychain.set(CHATGPT_CREDENTIAL_KEY, JSON.stringify(refreshed))) throw new Error("无法安全保存 ChatGPT 续期令牌")
+  }, Date.now(), (operation) => withChatGPTRefreshLease(credential, operation))
+}
+
+async function postChatGPTResponses(model: string, credential: ChatGPTCredential, instructions: string, input: Array<{ role: "user" | "assistant"; content: string }>, signal: AbortSignal) {
+  const response = await fetch("https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${credential.accessToken}` },
+    body: JSON.stringify({ model, instructions, input, store: false, stream: true }),
+    signal,
+    timeout: 60,
+  })
+  if (!response.ok) {
+    const raw = await response.text()
+    let payload: any = {}
+    try { payload = raw ? JSON.parse(raw) : {} } catch { /* Keep the bounded raw detail for non-JSON admission errors. */ }
+    const message = payload?.error?.message || payload?.detail || payload?.message || raw.slice(0, 200)
+    const code = payload?.error?.code || payload?.code || ""
+    throw Object.assign(new Error(`HTTP ${response.status}${message ? `：${String(message).slice(0, 220)}` : ""}`), { status: response.status, code, retryable: false })
+  }
+  if (!response.body) throw new Error("ChatGPT 没有返回流式响应")
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ""
+  let text = ""
+  let completedResponse: any = null
+  let completed = false
+  const consume = (event: { event: string; data: string }) => {
+    if (event.data === "[DONE]") return
+    let payload: any
+    try { payload = JSON.parse(event.data) } catch { throw new Error("ChatGPT 返回了无法解析的流事件") }
+    const eventType = payload?.type || event.event
+    if (eventType === "response.output_text.delta") text += typeof payload.delta === "string" ? payload.delta : ""
+    else if (eventType === "response.failed" || eventType === "error") {
+      const detail = payload?.response?.error || payload?.error || {}
+      throw Object.assign(new Error(detail.message || detail.code || "ChatGPT 回复失败"), { code: detail.code || "", retryable: false })
+    } else if (eventType === "response.incomplete") {
+      const reason = payload?.response?.incomplete_details?.reason || "响应未完成"
+      throw Object.assign(new Error(`ChatGPT 回复未完成：${reason}`), { code: reason, retryable: false })
+    } else if (eventType === "response.completed") {
+      completed = true
+      completedResponse = payload.response || null
+    }
+  }
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      const bytes = value instanceof Uint8Array ? value : typeof value?.toUint8Array === "function" ? value.toUint8Array() : null
+      buffer += bytes ? decoder.decode(bytes, { stream: true }) : String(value || "")
+      const split = splitSSEEvents(buffer)
+      buffer = split.remainder
+      for (const event of split.events) consume(event)
+    }
+    buffer += decoder.decode()
+    if (buffer.trim()) consume({ event: "message", data: buffer.replace(/\r?\n$/, "") })
+  } finally {
+    reader.releaseLock()
+  }
+  if (!completed) throw new Error("ChatGPT 流在 response.completed 前结束")
+  return text || extractResponsesText(completedResponse)
+}
+
 function geminiGenerateURL(config: AIConfig) {
   const endpoint = config.endpoint.trim()
   const model = config.model.trim()
@@ -203,6 +317,8 @@ function SmartReplyKeyboard() {
   const stored = Storage.get<Profile>("profile", { shared: true }) || defaultProfile
   const storedAI = Storage.get<AIConfig>("ai", { shared: true }) || defaultAI
   const initialAI = normalizeAI(storedAI)
+  const authMode: AIAuthMode = Storage.get<AIAuthMode>(CHATGPT_MODE_KEY, { shared: true }) === "chatgptPlan" ? "chatgptPlan" : "apiKey"
+  const chatGPTModel = Storage.get<string>(CHATGPT_MODEL_KEY, { shared: true }) || ""
   const [profile, setProfile] = useState<Profile>(stored)
   const [ai] = useState<AIConfig>(initialAI)
   useEffect(() => { if (initialAI.model !== storedAI.model) Storage.set("ai", initialAI, { shared: true }) }, [])
@@ -216,6 +332,7 @@ function SmartReplyKeyboard() {
   const [notice, setNotice] = useState("点输入框后长按粘贴对方消息")
   const [retryText, setRetryText] = useState("")
   const [busy, setBusy] = useState(false)
+  const [usageLimitReached, setUsageLimitReached] = useState(false)
   useEffect(() => {
     CustomKeyboard.requestHeight(showContext || hasReplyResults ? 360 : 270)
   }, [showContext, hasReplyResults])
@@ -234,8 +351,10 @@ function SmartReplyKeyboard() {
     const opponent = selectedOpponent && senders.includes(selectedOpponent) ? selectedOpponent : senders[0]
     const text = latestMessage(transcript, rawInput, opponent)
     if (!text) { setHasReplyResults(false); setNotice("请先点输入框，然后长按粘贴对方消息"); return }
-    if (!ai.apiKey.trim()) { setHasReplyResults(false); setNotice("请先在主 App 设置 AI API Key"); return }
-    if (!ai.model.trim()) { setHasReplyResults(false); setNotice("请先在主 App 设置模型名称"); return }
+    if (authMode === "apiKey" && !ai.apiKey.trim()) { setHasReplyResults(false); setNotice("请先在主 App 设置 AI API Key"); return }
+    if (authMode === "apiKey" && !ai.model.trim()) { setHasReplyResults(false); setNotice("请先在主 App 设置模型名称"); return }
+    if (authMode === "chatgptPlan" && usageLimitReached) { setNotice("ChatGPT 计划用量受限；请先管理用量"); return }
+    if (authMode === "chatgptPlan" && !chatGPTModel.trim()) { setHasReplyResults(false); setNotice("请先在主 App 登录 ChatGPT 并选择模型"); return }
     const requestId = ++activeRequestId
     activeRequest?.abort()
     const controller = new AbortController()
@@ -254,15 +373,24 @@ function SmartReplyKeyboard() {
       const chatMessages = structuredDialogue.length
         ? [{ role: "system", content: SYSTEM_PROMPT }, ...structuredDialogue, { role: "user", content: replyInstruction }]
         : [{ role: "system", content: SYSTEM_PROMPT }, { role: "user", content: prompt }]
-      const baseURL = isGemini ? geminiGenerateURL(ai) : ai.endpoint.trim()
-      if (!/^https:\/\//i.test(baseURL)) throw new Error("接口地址必须以 https:// 开头")
-      const url = baseURL
-      const body = isGemini
-        ? { contents: [{ role: "user", parts: [{ text: `${SYSTEM_PROMPT}\n\n${prompt}` }] }], generationConfig: { temperature: 0.85, maxOutputTokens: 240 } }
-        : { model: ai.model.trim(), temperature: 0.85, max_tokens: 240, ...(ai.provider === "DeepSeek" ? { thinking: { type: "disabled" } } : {}), messages: chatMessages }
-      const headers = isGemini ? { "Content-Type": "application/json", "x-goog-api-key": ai.apiKey.trim() } : { "Content-Type": "application/json", "Authorization": `Bearer ${ai.apiKey.trim()}` }
-      const data = await postJSON(url, headers, body, controller.signal)
-      const content = isGemini ? (data?.candidates?.[0]?.content?.parts?.[0]?.text || "") : (data?.choices?.[0]?.message?.content || "")
+      let content = ""
+      if (authMode === "chatgptPlan") {
+        const credential = await chatGPTAccessCredential()
+        const planInput = structuredDialogue.length
+          ? [...structuredDialogue, { role: "user" as const, content: replyInstruction }]
+          : [{ role: "user" as const, content: prompt }]
+        content = await postChatGPTResponses(chatGPTModel, credential, SYSTEM_PROMPT, planInput, controller.signal)
+      } else {
+        const baseURL = isGemini ? geminiGenerateURL(ai) : ai.endpoint.trim()
+        if (!/^https:\/\//i.test(baseURL)) throw new Error("接口地址必须以 https:// 开头")
+        const url = baseURL
+        const body = isGemini
+          ? { contents: [{ role: "user", parts: [{ text: `${SYSTEM_PROMPT}\n\n${prompt}` }] }], generationConfig: { temperature: 0.85, maxOutputTokens: 240 } }
+          : { model: ai.model.trim(), temperature: 0.85, max_tokens: 240, ...(ai.provider === "DeepSeek" ? { thinking: { type: "disabled" } } : {}), messages: chatMessages }
+        const headers = isGemini ? { "Content-Type": "application/json", "x-goog-api-key": ai.apiKey.trim() } : { "Content-Type": "application/json", "Authorization": `Bearer ${ai.apiKey.trim()}` }
+        const data = await postJSON(url, headers, body, controller.signal)
+        content = isGemini ? (data?.candidates?.[0]?.content?.parts?.[0]?.text || "") : (data?.choices?.[0]?.message?.content || "")
+      }
       const result = parseReplies(content)
       if (result.length === 0) throw new Error("AI 返回格式不正确")
       if (requestId !== activeRequestId) return
@@ -277,8 +405,20 @@ function SmartReplyKeyboard() {
       setHasReplyResults(true)
       setRetryText(text)
       const detail = String(error).replace("Error: ", "")
-      const status = detail.match(/HTTP\s+\d{3}/i)?.[0] || (/network|联网|连接|internet/i.test(detail) ? "网络" : "解析")
-      setNotice(`AI 暂不可用（${status}），已切换本地建议`)
+      const code = (error as any)?.code
+      if (authMode === "chatgptPlan" && ["subscription_sharing_usage_limit_exceeded", "subscription_sharing_usage_unavailable"].includes(code)) {
+        setUsageLimitReached(true)
+        setRetryText("")
+        setNotice("ChatGPT 计划用量已达当前限制；已切换为本地建议")
+      } else if (authMode === "chatgptPlan" && (error as any)?.requiresSignIn) {
+        setRetryText("")
+        setNotice((error as any)?.credentialChanged ? "ChatGPT 登录状态已变化，请重试；已显示本地建议" : "ChatGPT 登录已失效，请在主 App 重新授权；已显示本地建议")
+      } else if (authMode === "chatgptPlan") {
+        setNotice(`${detail.slice(0, 96)}；已显示本地建议`)
+      } else {
+        const status = detail.match(/HTTP\s+\d{3}/i)?.[0] || (/network|联网|连接|internet/i.test(detail) ? "网络" : "解析")
+        setNotice(`AI 暂不可用（${status}），已切换本地建议`)
+      }
     } finally {
       if (requestId === activeRequestId) setBusy(false)
     }
@@ -324,6 +464,7 @@ function SmartReplyKeyboard() {
       <HStack spacing={6} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
         <Text modifiers={modifiers().font(16).bold().foregroundStyle("label")}>智能回复</Text>
         <Picker label={<Text modifiers={modifiers().font(12).foregroundStyle("tint")}>{profile.tone}⌄</Text>} pickerStyle="menu" value={profile.tone} onChanged={(tone: any) => selectTone(tone as Profile["tone"])}>{replyTones.map((tone) => <Text tag={tone}>{tone}</Text>)}</Picker>
+        {authMode === "chatgptPlan" ? <Text modifiers={modifiers().font(10).foregroundStyle("secondaryLabel")}>使用 ChatGPT 计划</Text> : null}
         <Spacer />
         {senderOptions.length > 1 && activeOpponent ? <Button buttonStyle="plain" action={() => { const index = senderOptions.indexOf(activeOpponent); setSelectedOpponent(senderOptions[(index + 1) % senderOptions.length]) }}><Text modifiers={modifiers().font(11).foregroundStyle("tint")}>对方：{activeOpponent.slice(0, 6)}{activeOpponent.length > 6 ? "…" : ""}</Text></Button> : null}
         <Button title="完成" buttonStyle="plain" action={() => CustomKeyboard.dismiss()} />
@@ -346,7 +487,12 @@ function SmartReplyKeyboard() {
       <HStack spacing={4} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
         <Text modifiers={modifiers().font(11).foregroundStyle("tertiaryLabel")}>{notice}</Text>
         <Spacer />
-        {retryText ? <Button buttonStyle="plain" action={() => { if (!busy) void generate(retryText) }}><Text modifiers={modifiers().font(11).foregroundStyle("tint")}>重试</Text></Button> : null}
+        {authMode === "chatgptPlan"
+          ? usageLimitReached
+            ? <Button buttonStyle="borderedProminent" tint="blue" action={() => { setUsageLimitReached(false); void Safari.openURL(CHATGPT_USAGE_URL) }}><Text modifiers={modifiers().font(11).bold()}>管理用量</Text></Button>
+            : <Button buttonStyle="plain" action={() => { void Safari.openURL(CHATGPT_USAGE_URL) }}><Text modifiers={modifiers().font(11).foregroundStyle("tint")}>管理用量</Text></Button>
+          : null}
+        {retryText && !usageLimitReached ? <Button buttonStyle="plain" action={() => { if (!busy) void generate(retryText) }}><Text modifiers={modifiers().font(11).foregroundStyle("tint")}>重试</Text></Button> : null}
         <Button buttonStyle="plain" action={() => {
           activeRequestId++
           activeRequest?.abort()
