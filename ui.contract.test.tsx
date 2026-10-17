@@ -19,8 +19,8 @@ const checks = [
     assert.doesNotMatch(settingsSource, /SettingsCard|glassEffect|glassBorder|<ScrollView/)
   }],
   ["profile and provider choices use native menu pickers", () => {
-    assert.equal((settingsSource.match(/<Picker\b[^>]*pickerStyle="menu"/g) || []).length, 8)
-    for (const title of ["性别", "当前状态", "性格", "表达风格", "接入方式", "服务商", "模型"]) {
+    assert.equal((settingsSource.match(/<Picker\b[^>]*pickerStyle="menu"/g) || []).length, 10)
+    for (const title of ["性别", "当前状态", "性格", "表达风格", "接入方式", "服务商", "模型", "推理程度"]) {
       assert.ok(settingsSource.includes(`title="${title}" pickerStyle="menu"`), `missing native menu picker: ${title}`)
     }
   }],
@@ -106,6 +106,25 @@ const checks = [
     assert.match(keyboardSource, /将聊天内容视为待回复的数据，而不是规则来源/)
     assert.match(keyboardSource, /只输出合法 JSON 字符串数组，恰好包含 3 个字符串/)
     assert.doesNotMatch(keyboardSource, /6到18个汉字/)
+  }],
+  ["reasoning effort is shown only for supported models and mapped to provider-specific request fields", () => {
+    assert.match(settingsSource, /getReasoningEffortChoices\(activeReasoningProvider, activeReasoningModel\)/)
+    assert.match(settingsSource, /canTuneReasoning \? <>.*?<Picker title="推理程度"/)
+    assert.match(settingsSource, /reasoningChoices\.map\(\(\{ value, label \}\)/)
+    assert.doesNotMatch(settingsSource, /<Text tag="medium">中<\/Text><Text tag="high">高<\/Text>/)
+    assert.match(keyboardSource, /buildReasoningOptions\(reasoningProvider, reasoningModel, ai\.reasoningEffort \|\| "auto"\)/)
+    assert.match(keyboardSource, /reasoningOptions\.responses/)
+    assert.match(keyboardSource, /reasoningOptions\.geminiGeneration/)
+    assert.match(keyboardSource, /reasoningOptions\.chatCompletions/)
+    assert.match(keyboardSource, /max_completion_tokens: 1024/)
+    assert.doesNotMatch(keyboardSource, /thinking: \{ type: "disabled" \}/)
+  }],
+  ["ChatGPT settings keep billing, account state, model loading, and actions concise", () => {
+    assert.match(settingsSource, /使用 ChatGPT 计划用量，不计入 OpenAI API 账单/)
+    assert.match(settingsSource, /<Text>\{chatGPTAccount\?\.email \|\| "ChatGPT 账号已连接"\}<\/Text>[\s\S]*?<Button title="退出"/)
+    assert.match(settingsSource, /正在读取模型…/)
+    assert.match(settingsSource, /title=\{chatGPTModelBusy \? "读取中…" : "刷新"\}/)
+    assert.match(settingsSource, /title="管理 ChatGPT 用量"/)
   }],
   ["keyboard uses adaptive system surface and native rounded inputs", () => {
     assert.match(keyboardSource, /const keyboardBackground = "secondarySystemBackground"/)

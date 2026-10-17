@@ -1,6 +1,7 @@
-import { Navigation, NavigationStack, Form, Section, HStack, Text, TextField, SecureField, Button, Picker, modifiers, useState, useEffect, useCallback, useMemo, fetch, Script } from "scripting"
+import { Navigation, NavigationStack, Form, Section, HStack, Spacer, Text, TextField, SecureField, Button, Picker, modifiers, useState, useEffect, useCallback, useMemo, fetch, Script } from "scripting"
 import type { ChatGPTCredential, ChatGPTModel } from "./chatgpt-auth.js"
 import { buildAuthorizationURL, createCredentialRecord, createPKCE, createRandomValue, createUUID, parseLoopbackAuthorizationRequest, parseModelCatalog, refreshCredentialWithLatest, revokeCredential, verifyIdentityToken, withRefreshLease } from "./chatgpt-auth.js"
+import { getReasoningEffortChoices } from "./reasoning.js"
 type Gender = "女" | "男" | "不透露"
 type Mood = "开心" | "忙碌" | "疲惫" | "难过" | "生气" | "暧昧" | "相亲" | "普通"
 type Profile = { gender: Gender; age: number; mood: Mood; personality: "内向" | "外向"; tone: "温柔" | "活泼" | "成熟" | "简洁" | "土味情话" | "连环屁" }
@@ -8,7 +9,7 @@ const defaultProfile: Profile = { gender: "不透露", age: 25, mood: "普通", 
 const moods: Mood[] = ["开心", "忙碌", "疲惫", "难过", "生气", "暧昧", "相亲", "普通"]
 const tones: Profile["tone"][] = ["温柔", "活泼", "成熟", "简洁", "土味情话", "连环屁"]
 type AIProvider = "OpenAI" | "DeepSeek" | "通义千问" | "智谱AI" | "月之暗面" | "Google Gemini" | "自定义兼容接口"
-type AIConfig = { provider: AIProvider; endpoint: string; model: string; apiKey: string }
+type AIConfig = { provider: AIProvider; endpoint: string; model: string; apiKey: string; reasoningEffort?: string }
 type AIAuthMode = "apiKey" | "chatgptPlan"
 type ChatGPTAccount = { clientId: string; subject: string; email: string; scopes: string[] }
 type AIProviderPreferences = Partial<Record<AIProvider, { endpoint: string; model: string }>>
@@ -21,7 +22,7 @@ const providerDefaults: Record<AIProvider, { endpoint: string; model: string }> 
   "Google Gemini": { endpoint: "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent", model: "gemini-3.8-flash" },
   "自定义兼容接口": { endpoint: "https://api.openai.com/v1/chat/completions", model: "" }
 }
-const defaultAI: AIConfig = { provider: "OpenAI", ...providerDefaults.OpenAI, apiKey: "" }
+const defaultAI: AIConfig = { provider: "OpenAI", ...providerDefaults.OpenAI, apiKey: "", reasoningEffort: "auto" }
 const normalizeAI = (config: AIConfig): AIConfig => config.provider === "DeepSeek" && ["deepseek-chat", "deepseek-reasoner"].includes(config.model)
   ? { ...config, model: "deepseek-v4-flash" }
   : config.provider === "Google Gemini" && config.model === "gemini-2.0-flash"
@@ -253,12 +254,18 @@ function App() {
   const [chatGPTAccount, setChatGPTAccount] = useState<ChatGPTAccount | null>(readChatGPTAccount())
   const [chatGPTModels, setChatGPTModels] = useState<ChatGPTModel[]>([])
   const [selectedChatGPTModel, setSelectedChatGPTModel] = useState<string>(Storage.get<string>(CHATGPT_MODEL_KEY, { shared: true }) || "")
+  const [chatGPTModelBusy, setChatGPTModelBusy] = useState(false)
   const [chatGPTNotice, setChatGPTNotice] = useState("登录 ChatGPT 后读取该账号可用模型")
   const [chatGPTBusy, setChatGPTBusy] = useState(false)
   const [showKey, setShowKey] = useState(false)
   const [showAdvanced, setShowAdvanced] = useState(initialAI.provider === "自定义兼容接口")
   const [models, setModels] = useState<string[]>([])
   const [modelNotice, setModelNotice] = useState("填写 API Key 后会自动读取可用模型")
+  const activeReasoningProvider = authMode === "chatgptPlan" ? "OpenAI" : ai.provider
+  const activeReasoningModel = authMode === "chatgptPlan" ? selectedChatGPTModel : ai.model
+  const reasoningChoices = getReasoningEffortChoices(activeReasoningProvider, activeReasoningModel)
+  const canTuneReasoning = reasoningChoices.length > 1
+  const selectedReasoningEffort = reasoningChoices.some(({ value }) => value === ai.reasoningEffort) ? ai.reasoningEffort! : "auto"
   useEffect(() => { if (initialAI.model !== storedAI.model) Storage.set("ai", initialAI, { shared: true }) }, [])
   const saveProfile = useCallback((next: Profile) => {
     setProfile(next)
@@ -349,8 +356,9 @@ function App() {
     const controller = new AbortController()
     chatGPTModelRequest = controller
     let credential = readChatGPTCredential()
-    if (!credential) { setChatGPTModels([]); setChatGPTNotice("请先使用 ChatGPT 账号授权"); return }
-    if (!credential.scopes?.includes("chatgpt.tokens.use.direct")) { setChatGPTModels([]); setChatGPTNotice("当前授权未允许使用 ChatGPT 计划，请重新登录授权"); return }
+    if (!credential) { setChatGPTModels([]); setChatGPTModelBusy(false); setChatGPTNotice("请先使用 ChatGPT 账号授权"); return }
+    if (!credential.scopes?.includes("chatgpt.tokens.use.direct")) { setChatGPTModels([]); setChatGPTModelBusy(false); setChatGPTNotice("当前授权未允许使用 ChatGPT 计划，请重新登录授权"); return }
+    setChatGPTModelBusy(true)
     setChatGPTNotice("正在读取该账号可用模型…")
     try {
       credential = await refreshCredentialWithLatest(credential, fetch, readChatGPTCredential, saveChatGPTCredential, Date.now(), (operation) => withChatGPTRefreshLease(credential!, operation))
@@ -382,6 +390,8 @@ function App() {
         setChatGPTModels([])
       }
       setChatGPTNotice((error as any)?.credentialChanged ? "ChatGPT 登录状态刚刚改变，请重新读取模型" : (error as any)?.requiresSignIn ? "ChatGPT 登录已失效，请重新授权" : `读取 ChatGPT 模型失败：${String(error).replace("Error: ", "")}`)
+    } finally {
+      if (requestId === chatGPTModelRequestId) setChatGPTModelBusy(false)
     }
   }, [])
   const loginChatGPT = useCallback(async () => {
@@ -424,6 +434,7 @@ function App() {
       if (credential) remoteRevoked = await revokeCredential(credential, fetch)
     } catch { /* Local tokens are cleared even when the remote revocation cannot be confirmed. */ }
     Keychain.remove(CHATGPT_CREDENTIAL_KEY)
+    setChatGPTModelBusy(false)
     setAuthMode("apiKey")
     Storage.set(CHATGPT_MODE_KEY, "apiKey", { shared: true })
     setChatGPTAccount(readChatGPTAccount())
@@ -483,19 +494,21 @@ function App() {
         <Section header={<Text>AI 服务</Text>} footer={<Text>{authMode === "apiKey" ? modelNotice : chatGPTNotice}</Text>}>
           <Picker title="接入方式" pickerStyle="menu" value={authMode} onChanged={(value: any) => changeAuthMode(value as AIAuthMode)}><Text tag="apiKey">API Key</Text><Text tag="chatgptPlan">ChatGPT 账号计划</Text></Picker>
           {authMode === "chatgptPlan" ? <>
-            <Text>符合条件的 AI 回复会使用你的 ChatGPT 计划或额度，与 OpenAI API 账单分开。</Text>
+            <Text>使用 ChatGPT 计划用量，不计入 OpenAI API 账单。</Text>
             {readChatGPTCredential()
               ? <HStack>
-                  <Text>{chatGPTAccount?.email || "ChatGPT 已连接"}</Text>
-                  <Button title="退出登录" buttonStyle="plain" action={() => { void logoutChatGPT() }} />
+                  <Text>{chatGPTAccount?.email || "ChatGPT 账号已连接"}</Text>
+                  <Spacer />
+                  <Button title="退出" buttonStyle="plain" action={() => { void logoutChatGPT() }} />
                 </HStack>
               : <Button title={chatGPTBusy ? "正在连接…" : "Continue with ChatGPT"} buttonStyle="borderedProminent" disabled={chatGPTBusy} action={() => { void loginChatGPT() }} />}
             <HStack>
               {chatGPTModels.length > 0
                 ? <Picker title="模型" pickerStyle="menu" value={selectedChatGPTModel || chatGPTModels[0].slug} onChanged={(value: any) => { const model = value as string; setSelectedChatGPTModel(model); Storage.set(CHATGPT_MODEL_KEY, model, { shared: true }) }}>{chatGPTModels.map((model) => <Text tag={model.slug}>{model.displayName}</Text>)}</Picker>
-                : <Text>登录后读取该账号可用模型</Text>}
-              <Button title="刷新模型" systemImage="arrow.clockwise" action={() => { void refreshChatGPTModels() }} />
+                : <Text>{readChatGPTCredential() ? (chatGPTModelBusy ? "正在读取模型…" : "暂无可选模型") : "登录后读取可用模型"}</Text>}
+              <Button title={chatGPTModelBusy ? "读取中…" : "刷新"} systemImage="arrow.clockwise" disabled={chatGPTModelBusy || !readChatGPTCredential()} action={() => { void refreshChatGPTModels() }} />
             </HStack>
+            {canTuneReasoning ? <><Picker title="推理程度" pickerStyle="menu" value={selectedReasoningEffort} onChanged={(value: any) => saveAI({ ...ai, reasoningEffort: value as string })}>{reasoningChoices.map(({ value, label }) => <Text tag={value}>{label}</Text>)}</Picker><Text>选项按当前模型能力提供；自动使用模型默认值。</Text></> : <Text>当前 ChatGPT 模型不支持手动调节推理程度</Text>}
             <Button title="管理 ChatGPT 用量" systemImage="arrow.up.right" action={() => { void Safari.openURL(CHATGPT_USAGE_URL) }} />
           </> : <>
             <Picker title="服务商" pickerStyle="menu" value={ai.provider} onChanged={(value: any) => changeProvider(value as AIProvider)}>{providers.map((provider) => <Text tag={provider}>{provider}</Text>)}</Picker>
@@ -509,6 +522,7 @@ function App() {
                 : <TextField title="模型" prompt="填写模型名称" value={ai.model} onChanged={(v) => saveAI({ ...ai, model: v })} />}
               <Button title="刷新模型" systemImage="arrow.clockwise" action={() => { void refreshModels() }} />
             </HStack>
+            {canTuneReasoning ? <><Picker title="推理程度" pickerStyle="menu" value={selectedReasoningEffort} onChanged={(value: any) => saveAI({ ...ai, reasoningEffort: value as string })}>{reasoningChoices.map(({ value, label }) => <Text tag={value}>{label}</Text>)}</Picker><Text>选项按当前模型能力提供；自动使用模型默认值。</Text></> : <Text>当前服务商或模型不支持手动调节推理程度</Text>}
           </>}
         </Section>
 

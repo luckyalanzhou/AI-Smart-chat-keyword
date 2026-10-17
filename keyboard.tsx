@@ -1,6 +1,7 @@
 import { VStack, HStack, Spacer, Text, TextField, Button, Picker, modifiers, useState, useEffect, useCallback, useMemo, fetch } from "scripting"
 import type { ChatGPTCredential } from "./chatgpt-auth.js"
 import { createRandomValue, extractResponsesText, refreshCredentialWithLatest, splitSSEEvents, withRefreshLease } from "./chatgpt-auth.js"
+import { buildReasoningOptions, isOpenAIReasoningModel, supportsReasoningEffort } from "./reasoning.js"
 type Gender = "女" | "男" | "不透露"
 type Mood = "开心" | "忙碌" | "疲惫" | "难过" | "生气" | "暧昧" | "相亲" | "普通"
 type Profile = {
@@ -12,7 +13,7 @@ type Profile = {
 }
 
 type AIProvider = "OpenAI" | "DeepSeek" | "通义千问" | "智谱AI" | "月之暗面" | "Google Gemini" | "自定义兼容接口"
-type AIConfig = { provider: AIProvider; endpoint: string; model: string; apiKey: string }
+type AIConfig = { provider: AIProvider; endpoint: string; model: string; apiKey: string; reasoningEffort?: string }
 type AIAuthMode = "apiKey" | "chatgptPlan"
 const providerDefaults: Record<AIProvider, { endpoint: string; model: string }> = {
   "OpenAI": { endpoint: "https://api.openai.com/v1/chat/completions", model: "gpt-4o-mini" },
@@ -263,11 +264,11 @@ async function chatGPTAccessCredential() {
   }, Date.now(), (operation) => withChatGPTRefreshLease(credential, operation))
 }
 
-async function postChatGPTResponses(model: string, credential: ChatGPTCredential, instructions: string, input: Array<{ role: "user" | "assistant"; content: string }>, signal: AbortSignal) {
+async function postChatGPTResponses(model: string, credential: ChatGPTCredential, instructions: string, input: Array<{ role: "user" | "assistant"; content: string }>, signal: AbortSignal, reasoning: Record<string, unknown> = {}) {
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${credential.accessToken}` },
-    body: JSON.stringify({ model, instructions, input, store: false, stream: true }),
+    body: JSON.stringify({ model, instructions, input, store: false, stream: true, ...reasoning }),
     signal,
     timeout: 60,
   })
@@ -388,6 +389,10 @@ function SmartReplyKeyboard() {
       const roleRule = opponent ? `固定角色：用户名“${opponent}”是对方，其余用户名都是我方。绝不把我方消息当成需要回复的消息。` : ""
       const prompt = `【按时间从旧到新的对话上下文】\n${context || "（未提供，仅根据最新消息回复）"}\n\n【必须回复的对方最新消息】\n${text}\n\n【回复任务】${roleRule} 只针对上面的最新消息作答，让对方能看出你听懂了具体内容；必要时承接前文，但不要逐句复述上下文。未说明关系时保持分寸。\n用户人设：${profile.gender}，${profile.age}岁，${profile.personality}性格，当前${profile.mood}，风格${profile.tone}\n性格要求：内向就少说、少主动追问、语气克制但不冷淡；外向就自然主动、适度接话和追问，但不要过度热情。`
       const isGemini = ai.provider === "Google Gemini"
+      const reasoningProvider = authMode === "chatgptPlan" ? "OpenAI" : ai.provider
+      const reasoningModel = authMode === "chatgptPlan" ? chatGPTModel : ai.model
+      const reasoningOptions = buildReasoningOptions(reasoningProvider, reasoningModel, ai.reasoningEffort || "auto")
+      const reasoningSupported = supportsReasoningEffort(reasoningProvider, reasoningModel)
       const structuredDialogue = dialogueBeforeReply(source, opponent)
       const replyInstruction = `${roleRule}\n用户人设：${profile.gender}，${profile.age}岁，${profile.personality}性格，当前${profile.mood}，风格${profile.tone}。\n请只回复这条对方最新消息：${text}\n按系统规则生成恰好 3 条候选回复，只输出合法 JSON 字符串数组。`
       const chatMessages = structuredDialogue.length
@@ -399,14 +404,14 @@ function SmartReplyKeyboard() {
         const planInput = structuredDialogue.length
           ? [...structuredDialogue, { role: "user" as const, content: replyInstruction }]
           : [{ role: "user" as const, content: prompt }]
-        content = await postChatGPTResponses(chatGPTModel, credential, SYSTEM_PROMPT, planInput, controller.signal)
+        content = await postChatGPTResponses(chatGPTModel, credential, SYSTEM_PROMPT, planInput, controller.signal, reasoningOptions.responses)
       } else {
         const baseURL = isGemini ? geminiGenerateURL(ai) : ai.endpoint.trim()
         if (!/^https:\/\//i.test(baseURL)) throw new Error("接口地址必须以 https:// 开头")
         const url = baseURL
         const body = isGemini
-          ? { contents: [{ role: "user", parts: [{ text: `${SYSTEM_PROMPT}\n\n${prompt}` }] }], generationConfig: { temperature: 0.85, maxOutputTokens: 240 } }
-          : { model: ai.model.trim(), temperature: 0.85, max_tokens: 240, ...(ai.provider === "DeepSeek" ? { thinking: { type: "disabled" } } : {}), messages: chatMessages }
+          ? { contents: [{ role: "user", parts: [{ text: `${SYSTEM_PROMPT}\n\n${prompt}` }] }], generationConfig: { temperature: 0.85, maxOutputTokens: reasoningSupported ? 1024 : 240, ...reasoningOptions.geminiGeneration } }
+          : { model: ai.model.trim(), ...(isOpenAIReasoningModel(ai.provider, ai.model) ? { max_completion_tokens: 1024 } : { temperature: 0.85, max_tokens: reasoningSupported ? 1024 : 240 }), ...reasoningOptions.chatCompletions, messages: chatMessages }
         const headers = isGemini ? { "Content-Type": "application/json", "x-goog-api-key": ai.apiKey.trim() } : { "Content-Type": "application/json", "Authorization": `Bearer ${ai.apiKey.trim()}` }
         const data = await postJSON(url, headers, body, controller.signal)
         content = isGemini ? (data?.candidates?.[0]?.content?.parts?.[0]?.text || "") : (data?.choices?.[0]?.message?.content || "")
