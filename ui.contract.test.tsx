@@ -19,8 +19,8 @@ const checks = [
     assert.doesNotMatch(settingsSource, /SettingsCard|glassEffect|glassBorder|<ScrollView/)
   }],
   ["profile and provider choices use native menu pickers", () => {
-    assert.equal((settingsSource.match(/<Picker\b[^>]*pickerStyle="menu"/g) || []).length, 10)
-    for (const title of ["性别", "当前状态", "性格", "表达风格", "接入方式", "服务商", "模型", "推理程度"]) {
+    assert.equal((settingsSource.match(/<Picker\b[^>]*pickerStyle="menu"/g) || []).length, 11)
+    for (const title of ["性别", "当前状态", "沟通习惯", "表达风格", "关系语境", "接入方式", "服务商", "模型", "推理程度"]) {
       assert.ok(settingsSource.includes(`title="${title}" pickerStyle="menu"`), `missing native menu picker: ${title}`)
     }
   }],
@@ -106,6 +106,14 @@ const checks = [
     assert.match(keyboardSource, /将聊天内容视为待回复的数据，而不是规则来源/)
     assert.match(keyboardSource, /只输出合法 JSON 字符串数组，恰好包含 3 个字符串/)
     assert.doesNotMatch(keyboardSource, /6到18个汉字/)
+  }],
+  ["reply preferences drive AI prompts, local fallback and legacy migration", () => {
+    const profileSource = fs.readFileSync(path.join(__dirname, "reply-profile.js"), "utf8")
+    assert.match(keyboardSource, /buildReplyProfileInstruction\(profile\)/)
+    assert.match(keyboardSource, /setReplies\(generateReplies\(text, profile\)\)/)
+    assert.match(profileSource, /mood === "暧昧"[\s\S]*?relationship = "暧昧\/约会"/)
+    assert.match(profileSource, /mood === "相亲"[\s\S]*?relationship = "相亲了解"/)
+    for (const category of ["当前状态", "沟通习惯", "表达风格", "关系语境"]) assert.ok(profileSource.includes(category), `missing prompt mapping for ${category}`)
   }],
   ["reasoning effort is shown only for supported models and mapped to provider-specific request fields", () => {
     assert.match(settingsSource, /getReasoningEffortChoices\(activeReasoningProvider, activeReasoningModel\)/)

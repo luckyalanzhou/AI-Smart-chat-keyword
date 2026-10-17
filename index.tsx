@@ -2,12 +2,11 @@ import { Navigation, NavigationStack, Form, Section, HStack, Spacer, Text, TextF
 import type { ChatGPTCredential, ChatGPTModel } from "./chatgpt-auth.js"
 import { buildAuthorizationURL, createCredentialRecord, createPKCE, createRandomValue, createUUID, parseLoopbackAuthorizationRequest, parseModelCatalog, refreshCredentialWithLatest, revokeCredential, verifyIdentityToken, withRefreshLease } from "./chatgpt-auth.js"
 import { getReasoningEffortChoices } from "./reasoning.js"
-type Gender = "女" | "男" | "不透露"
-type Mood = "开心" | "忙碌" | "疲惫" | "难过" | "生气" | "暧昧" | "相亲" | "普通"
-type Profile = { gender: Gender; age: number; mood: Mood; personality: "内向" | "外向"; tone: "温柔" | "活泼" | "成熟" | "简洁" | "土味情话" | "连环屁" }
-const defaultProfile: Profile = { gender: "不透露", age: 25, mood: "普通", personality: "外向", tone: "温柔" }
-const moods: Mood[] = ["开心", "忙碌", "疲惫", "难过", "生气", "暧昧", "相亲", "普通"]
-const tones: Profile["tone"][] = ["温柔", "活泼", "成熟", "简洁", "土味情话", "连环屁"]
+import type { ReplyProfile } from "./reply-profile.js"
+import { defaultReplyProfile, moods, communicationStyles, expressionStyles, relationshipContexts, normalizeReplyProfile } from "./reply-profile.js"
+type Gender = ReplyProfile["gender"]
+type Profile = ReplyProfile
+const defaultProfile: Profile = defaultReplyProfile
 type AIProvider = "OpenAI" | "DeepSeek" | "通义千问" | "智谱AI" | "月之暗面" | "Google Gemini" | "自定义兼容接口"
 type AIConfig = { provider: AIProvider; endpoint: string; model: string; apiKey: string; reasoningEffort?: string }
 type AIAuthMode = "apiKey" | "chatgptPlan"
@@ -245,7 +244,7 @@ const listModelsURL = (config: AIConfig) => config.provider === "Google Gemini"
 
 function App() {
   const dismiss = Navigation.useDismiss()
-  const [profile, setProfile] = useState<Profile>((Storage.get<Profile>("profile", { shared: true }) || defaultProfile))
+  const [profile, setProfile] = useState<Profile>(normalizeReplyProfile(Storage.get<Profile>("profile", { shared: true }) || defaultProfile))
   const storedAI = Storage.get<AIConfig>("ai", { shared: true }) || defaultAI
   const initialAI = normalizeAI(storedAI)
   const storedAuthMode = Storage.get<AIAuthMode>(CHATGPT_MODE_KEY, { shared: true })
@@ -268,8 +267,9 @@ function App() {
   const selectedReasoningEffort = reasoningChoices.some(({ value }) => value === ai.reasoningEffort) ? ai.reasoningEffort! : "auto"
   useEffect(() => { if (initialAI.model !== storedAI.model) Storage.set("ai", initialAI, { shared: true }) }, [])
   const saveProfile = useCallback((next: Profile) => {
-    setProfile(next)
-    Storage.set("profile", next, { shared: true })
+    const normalized = normalizeReplyProfile(next)
+    setProfile(normalized)
+    Storage.set("profile", normalized, { shared: true })
   }, [])
   const saveAI = useCallback((next: AIConfig) => {
     // Any configuration edit invalidates an in-flight model request. Otherwise
@@ -483,12 +483,13 @@ function App() {
         navigationBarTitleDisplayMode="inline"
         toolbar={{ topBarTrailing: <Button title="关闭" systemImage="xmark" action={dismiss} /> }}
       >
-        <Section header={<Text>回复风格</Text>} footer={<Text>这些设置只用于调整回复语气，并通过共享存储供键盘读取。</Text>}>
+        <Section header={<Text>回复偏好</Text>} footer={<Text>这些分类会共同影响 AI 生成的回复；关系语境不指定时，默认保持友好中性。</Text>}>
           <Picker title="性别" pickerStyle="menu" value={profile.gender} onChanged={(value: any) => saveProfile({ ...profile, gender: value as Gender })}>{(["女", "男", "不透露"] as Gender[]).map((gender) => <Text tag={gender}>{gender}</Text>)}</Picker>
           <TextField title="年龄" value={String(profile.age)} onChanged={(value) => saveProfile({ ...profile, age: clampAge(value) })} />
-          <Picker title="当前状态" pickerStyle="menu" value={moods.indexOf(profile.mood)} onChanged={(value: any) => saveProfile({ ...profile, mood: moods[Number(value)] || "普通" })}>{moods.map((mood, index) => <Text tag={index}>{mood}</Text>)}</Picker>
-          <Picker title="性格" pickerStyle="menu" value={profile.personality === "内向" ? 0 : 1} onChanged={(value: any) => saveProfile({ ...profile, personality: Number(value) === 0 ? "内向" : "外向" })}><Text tag={0}>内向</Text><Text tag={1}>外向</Text></Picker>
-          <Picker title="表达风格" pickerStyle="menu" value={tones.indexOf(profile.tone)} onChanged={(value: any) => saveProfile({ ...profile, tone: tones[Number(value)] || "温柔" })}>{tones.map((tone, index) => <Text tag={index}>{tone}</Text>)}</Picker>
+          <Picker title="当前状态" pickerStyle="menu" value={profile.mood} onChanged={(value: any) => saveProfile({ ...profile, mood: value as Profile["mood"] })}>{moods.map((mood) => <Text tag={mood}>{mood}</Text>)}</Picker>
+          <Picker title="沟通习惯" pickerStyle="menu" value={profile.communicationStyle} onChanged={(value: any) => saveProfile({ ...profile, communicationStyle: value as Profile["communicationStyle"] })}>{communicationStyles.map((style) => <Text tag={style}>{style}</Text>)}</Picker>
+          <Picker title="表达风格" pickerStyle="menu" value={profile.tone} onChanged={(value: any) => saveProfile({ ...profile, tone: value as Profile["tone"] })}>{expressionStyles.map((tone) => <Text tag={tone}>{tone}</Text>)}</Picker>
+          <Picker title="关系语境" pickerStyle="menu" value={profile.relationship} onChanged={(value: any) => saveProfile({ ...profile, relationship: value as Profile["relationship"] })}>{relationshipContexts.map((relationship) => <Text tag={relationship}>{relationship}</Text>)}</Picker>
         </Section>
 
         <Section header={<Text>AI 服务</Text>} footer={<Text>{authMode === "apiKey" ? modelNotice : chatGPTNotice}</Text>}>
