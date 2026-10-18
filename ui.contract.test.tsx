@@ -51,6 +51,10 @@ const checks = [
     assert.match(settingsSource, /if \(authMode !== "apiKey"\) return[\s\S]*?\}, \[authMode, ai\.provider, ai\.apiKey, ai\.endpoint\]\)/)
     assert.match(settingsSource, /return \(\) => clearTimeout\(timeout\)/)
   }],
+  ["model refresh actions use a compact, disabled-while-loading native button", () => {
+    assert.match(settingsSource, /title=\{modelBusy \? "读取中…" : "刷新"\} systemImage="arrow\.clockwise" buttonStyle="plain" disabled=\{modelBusy \|\| !ai\.apiKey\.trim\(\)\}/)
+    assert.match(settingsSource, /title=\{chatGPTModelBusy \? "读取中…" : "刷新"\} systemImage="arrow\.clockwise" buttonStyle="plain" disabled=\{chatGPTModelBusy \|\| !readChatGPTCredential\(\)\}/)
+  }],
   ["ChatGPT OAuth uses Scripting's native HTTP server with loopback validation, PKCE, state, nonce and account-specific models", () => {
     assert.doesNotMatch(settingsSource, /node:net/)
     assert.match(settingsSource, /<!doctype html><html><head><meta charset="utf-8">/)
@@ -75,11 +79,12 @@ const checks = [
     assert.match(keyboardSource, /withRefreshLease/)
     assert.doesNotMatch(settingsSource, /Storage\.set\([^\n]*(?:accessToken|refreshToken|idToken)/)
   }],
-  ["ChatGPT account connection is separate from API Key mode and shows usage management", () => {
+  ["ChatGPT account connection is separate from API Key mode and explains plan billing", () => {
     assert.match(settingsSource, /type AIAuthMode = "apiKey" \| "chatgptPlan"/)
     assert.match(settingsSource, /Storage\.set\(CHATGPT_MODE_KEY, mode, \{ shared: true \}\)/)
     assert.match(settingsSource, /"Continue with ChatGPT"/)
-    assert.match(settingsSource, /title="管理 ChatGPT 用量"/)
+    assert.match(settingsSource, /ChatGPT 计划或额度，与 OpenAI API 账单分开/)
+    assert.doesNotMatch(settingsSource, /CHATGPT_USAGE_URL|管理 ChatGPT 用量/)
     assert.match(settingsSource, /if \(!Storage\.get<boolean>\(CHATGPT_NOTICE_KEY, \{ shared: true \}\)\) \{[\s\S]*?await Dialog\.alert/)
     assert.match(settingsSource, /只有你主动粘贴对方消息或点击生成后，对方消息、可选聊天上下文和回复风格资料才会发送给 OpenAI/)
     assert.match(settingsSource, /setSelectedChatGPTModel\(model\); Storage\.set\(CHATGPT_MODEL_KEY, model/)
@@ -92,9 +97,9 @@ const checks = [
     assert.match(keyboardSource, /if \(authMode === "apiKey" && !ai\.apiKey\.trim\(\)\)/)
     assert.match(keyboardSource, /response\.completed/)
     assert.match(keyboardSource, /subscription_sharing_usage_unavailable/)
-    assert.match(keyboardSource, /使用 ChatGPT 计划/)
-    assert.match(keyboardSource, /管理用量/)
-    assert.match(keyboardSource, /usageLimitReached[\s\S]*?buttonStyle="borderedProminent" tint="blue"/)
+    assert.match(keyboardSource, /authMode === "chatgptPlan"/)
+    assert.match(keyboardSource, /usageLimitReached[\s\S]*?ChatGPT 计划用量暂不可用，当前显示本地建议/)
+    assert.doesNotMatch(keyboardSource, /CHATGPT_USAGE_URL|管理用量|查看用量/)
     assert.match(keyboardSource, /retryText && !usageLimitReached/)
     assert.doesNotMatch(keyboardSource, /store: false, stream: true[^\n]*temperature|store: false, stream: true[^\n]*max_output_tokens/)
   }],
@@ -127,17 +132,18 @@ const checks = [
     assert.match(keyboardSource, /max_completion_tokens: 1024/)
     assert.doesNotMatch(keyboardSource, /thinking: \{ type: "disabled" \}/)
   }],
-  ["ChatGPT settings keep billing, account state, model loading, and actions concise", () => {
+  ["ChatGPT settings keep billing and account actions concise without a usage-management link", () => {
     assert.match(settingsSource, /使用 ChatGPT 计划用量，不计入 OpenAI API 账单/)
     assert.match(settingsSource, /<Text>\{chatGPTAccount\?\.email \|\| "ChatGPT 账号已连接"\}<\/Text>[\s\S]*?<Button title="退出"/)
     assert.match(settingsSource, /正在读取模型…/)
     assert.match(settingsSource, /title=\{chatGPTModelBusy \? "读取中…" : "刷新"\}/)
-    assert.match(settingsSource, /title="管理 ChatGPT 用量"/)
+    assert.doesNotMatch(settingsSource, /CHATGPT_USAGE_URL|管理 ChatGPT 用量/)
   }],
   ["keyboard uses adaptive system surface and native rounded inputs", () => {
     assert.match(keyboardSource, /const keyboardBackground = "secondarySystemBackground"/)
     assert.equal((keyboardSource.match(/textFieldStyle="roundedBorder"/g) || []).length, 2)
-    assert.match(keyboardSource, /<Picker label=\{<Text modifiers=\{modifiers\(\)\.font\(12\)\.foregroundStyle\("tint"\)\}>\{profile\.tone\}⌄<\/Text>\} pickerStyle="menu"/)
+    assert.match(settingsSource, /<Picker title="表达风格" pickerStyle="menu" value=\{profile\.tone\}/)
+    assert.doesNotMatch(keyboardSource, /<Picker|expressionStyles|selectTone/)
     assert.doesNotMatch(keyboardSource, /<RoundedRectangle|roundedBorder\(|cardBackground|mutedCardBackground|inputBackground/)
   }],
   ["reply suggestions remain directly tappable native buttons", () => {
@@ -151,6 +157,12 @@ const checks = [
     }
     assert.match(keyboardSource, /busy \? "生成中" : hasReplyResults \? "重新生成" : "生成回复"/)
     assert.match(keyboardSource, /CustomKeyboard\.insertText\(text\)/)
+  }],
+  ["keyboard stays focused on reply actions and removes usage-management links", () => {
+    assert.doesNotMatch(keyboardSource, /使用 ChatGPT 计划<\/Text>/)
+    assert.doesNotMatch(keyboardSource, /CHATGPT_USAGE_URL|管理用量|查看用量/)
+    assert.match(keyboardSource, /canClear \? <Button buttonStyle="plain" action=\{clearDraft\}>[\s\S]*?清空[\s\S]*?\}\s*<Spacer \/>[\s\S]*?生成回复/)
+    assert.match(keyboardSource, /<Text modifiers=\{modifiers\(\)\.font\(11\)\.foregroundStyle\("tertiaryLabel"\)\}>\{notice\}<\/Text>/)
   }],
   ["clearing an in-flight request releases the busy state", () => {
     assert.match(keyboardSource, /activeRequestId\+\+[\s\S]{0,80}activeRequest\?\.abort\(\)[\s\S]{0,80}setBusy\(false\)/)

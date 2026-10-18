@@ -14,11 +14,14 @@ export function getReasoningEffortChoices(provider, model) {
   let values = []
 
   if (provider === "OpenAI") {
-    if (/^gpt-5-pro(?:[.-]|$)/.test(value)) values = ["high"]
-    else if (/^gpt-5\.1-codex-max(?:[.-]|$)/.test(value)) values = ["none", "low", "medium", "high", "xhigh"]
-    else if (/^gpt-5\.1(?:[.-]|$)/.test(value)) values = ["none", "low", "medium", "high"]
-    else if (/^gpt-5\.[2-9](?:[.-]|$)/.test(value)) values = ["none", "low", "medium", "high", "xhigh"]
-    else if (/^(?:gpt-5(?:[.-]|$)|o[1-9](?:[.-]|$))/.test(value)) values = ["low", "medium", "high"]
+    const snapshot = "(?:-\\d{4}-\\d{2}-\\d{2})?$"
+    if (new RegExp(`^gpt-6(?:-astra|\\.1-sol)${snapshot}`).test(value)) values = ["low", "medium", "high", "xhigh", "max"]
+    else if (new RegExp(`^gpt-6-(?:sol|luna)${snapshot}`).test(value)) values = ["none", "low", "medium", "high", "xhigh", "max"]
+    else if (new RegExp(`^gpt-5\\.6(?:-(?:sol|terra|luna))?${snapshot}`).test(value)) values = ["none", "low", "medium", "high", "xhigh", "max"]
+    else if (new RegExp(`^gpt-5\\.5-pro${snapshot}`).test(value)) values = ["medium", "high", "xhigh"]
+    else if (new RegExp(`^gpt-5\\.4-pro${snapshot}`).test(value)) values = ["medium", "high", "xhigh"]
+    else if (new RegExp(`^gpt-5\\.5${snapshot}`).test(value)) values = ["none", "low", "medium", "high", "xhigh"]
+    else if (new RegExp(`^gpt-5\\.4(?:-mini)?${snapshot}`).test(value)) values = ["none", "low", "medium", "high", "xhigh"]
   } else if (provider === "DeepSeek" && /^deepseek-(?:v4(?:[.-]|$)|flash$)/.test(value)) {
     values = ["low", "high", "max"]
   } else if (provider === "通义千问" && /^qwen3\.8(?:[.-]|$)/.test(value)) {

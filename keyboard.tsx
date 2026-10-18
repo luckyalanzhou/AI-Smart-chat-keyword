@@ -1,9 +1,9 @@
-import { VStack, HStack, Spacer, Text, TextField, Button, Picker, modifiers, useState, useEffect, useCallback, useMemo, fetch } from "scripting"
+import { VStack, HStack, Spacer, Text, TextField, Button, modifiers, useState, useEffect, useCallback, useMemo, fetch } from "scripting"
 import type { ChatGPTCredential } from "./chatgpt-auth.js"
 import { createRandomValue, extractResponsesText, refreshCredentialWithLatest, splitSSEEvents, withRefreshLease } from "./chatgpt-auth.js"
 import { buildReasoningOptions, isOpenAIReasoningModel, supportsReasoningEffort } from "./reasoning.js"
 import type { ReplyProfile } from "./reply-profile.js"
-import { defaultReplyProfile, expressionStyles, normalizeReplyProfile, buildReplyProfileInstruction, generateFallbackReplies } from "./reply-profile.js"
+import { defaultReplyProfile, normalizeReplyProfile, buildReplyProfileInstruction, generateFallbackReplies } from "./reply-profile.js"
 type Profile = ReplyProfile
 
 type AIProvider = "OpenAI" | "DeepSeek" | "通义千问" | "智谱AI" | "月之暗面" | "Google Gemini" | "自定义兼容接口"
@@ -23,14 +23,12 @@ const CHATGPT_CREDENTIAL_KEY = "ai-smart-chat-keyword.chatgpt.credentials.v1"
 const CHATGPT_REFRESH_LOCK_KEY = "ai-smart-chat-keyword.chatgpt.refresh-lock.v1"
 const CHATGPT_MODEL_KEY = "ai-smart-chat-keyword.chatgpt.model"
 const CHATGPT_MODE_KEY = "ai-smart-chat-keyword.chatgpt.authMode"
-const CHATGPT_USAGE_URL = "https://chatgpt.com/settings/usage"
 const normalizeAI = (config: AIConfig): AIConfig => config.provider === "DeepSeek" && ["deepseek-chat", "deepseek-reasoner"].includes(config.model)
   ? { ...config, model: "deepseek-v4-flash" }
   : config.provider === "Google Gemini" && config.model === "gemini-2.0-flash"
     ? { ...config, model: "gemini-3.8-flash" }
     : config
 const defaultProfile: Profile = defaultReplyProfile
-const replyTones: Profile["tone"][] = expressionStyles
 const generateReplies = generateFallbackReplies
 
 let activeRequestId = 0
@@ -311,7 +309,7 @@ function SmartReplyKeyboard() {
   const initialAI = normalizeAI(storedAI)
   const authMode: AIAuthMode = Storage.get<AIAuthMode>(CHATGPT_MODE_KEY, { shared: true }) === "chatgptPlan" ? "chatgptPlan" : "apiKey"
   const chatGPTModel = Storage.get<string>(CHATGPT_MODEL_KEY, { shared: true }) || ""
-  const [profile, setProfile] = useState<Profile>(stored)
+  const [profile] = useState<Profile>(stored)
   const [ai] = useState<AIConfig>(initialAI)
   useEffect(() => {
     if (initialAI.model !== storedAI.model) Storage.set("ai", initialAI, { shared: true })
@@ -336,6 +334,7 @@ function SmartReplyKeyboard() {
     return [...new Set(copiedMessages(source).map((item) => item.sender))]
   }, [sentence, transcript])
   const activeOpponent = selectedOpponent && senderOptions.includes(selectedOpponent) ? selectedOpponent : senderOptions[0]
+  const canClear = Boolean(sentence.trim() || transcript.trim() || hasReplyResults)
 
   const generate = useCallback(async (input?: string) => {
     const rawInput = input ?? sentence
@@ -348,7 +347,7 @@ function SmartReplyKeyboard() {
     if (!text) { setHasReplyResults(false); setNotice("请先点输入框，然后长按粘贴对方消息"); return }
     if (authMode === "apiKey" && !ai.apiKey.trim()) { setHasReplyResults(false); setNotice("请先在主 App 设置 AI API Key"); return }
     if (authMode === "apiKey" && !ai.model.trim()) { setHasReplyResults(false); setNotice("请先在主 App 设置模型名称"); return }
-    if (authMode === "chatgptPlan" && usageLimitReached) { setNotice("ChatGPT 计划用量受限；请先管理用量"); return }
+    if (authMode === "chatgptPlan" && usageLimitReached) { setNotice("ChatGPT 计划用量暂不可用，当前显示本地建议"); return }
     if (authMode === "chatgptPlan" && !chatGPTModel.trim()) { setHasReplyResults(false); setNotice("请先在主 App 登录 ChatGPT 并选择模型"); return }
     const requestId = ++activeRequestId
     activeRequest?.abort()
@@ -434,12 +433,21 @@ function SmartReplyKeyboard() {
     CustomKeyboard.playInputClick()
     setNotice("已插入，是否发送由你确认")
   }, [])
-  const selectTone = useCallback((tone: Profile["tone"]) => {
-    const updated = { ...profile, tone }
-    Storage.set("profile", updated, { shared: true })
-    setProfile(updated)
-    setNotice(`回复风格：${tone}`)
-  }, [profile])
+  const clearDraft = useCallback(() => {
+    activeRequestId++
+    activeRequest?.abort()
+    activeRequest = null
+    setBusy(false)
+    setSentence("")
+    setTranscript("")
+    setShowContext(false)
+    setSelectedOpponent("")
+    setLastInputLength(0)
+    setRetryText("")
+    setHasReplyResults(false)
+    setReplies(["先粘贴对方消息", "再点击生成回复", "点选即可插入"])
+    setNotice("已清空")
+  }, [])
   const replyCards = useMemo(() => hasReplyResults ? (
     <VStack alignment="leading" spacing={5} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
       {replies.map((reply, index) => (
@@ -463,8 +471,6 @@ function SmartReplyKeyboard() {
     <VStack alignment="leading" spacing={6} padding={{ horizontal: 12, vertical: 8 }} background={keyboardBackground} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
       <HStack spacing={6} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
         <Text modifiers={modifiers().font(16).bold().foregroundStyle("label")}>智能回复</Text>
-        <Picker label={<Text modifiers={modifiers().font(12).foregroundStyle("tint")}>{profile.tone}⌄</Text>} pickerStyle="menu" value={profile.tone} onChanged={(tone: any) => selectTone(tone as Profile["tone"])}>{replyTones.map((tone) => <Text tag={tone}>{tone}</Text>)}</Picker>
-        {authMode === "chatgptPlan" ? <Text modifiers={modifiers().font(10).foregroundStyle("secondaryLabel")}>使用 ChatGPT 计划</Text> : null}
         <Spacer />
         {senderOptions.length > 1 && activeOpponent ? <Button buttonStyle="plain" action={() => { const index = senderOptions.indexOf(activeOpponent); setSelectedOpponent(senderOptions[(index + 1) % senderOptions.length]) }}><Text modifiers={modifiers().font(11).foregroundStyle("tint")}>对方：{activeOpponent.slice(0, 6)}{activeOpponent.length > 6 ? "…" : ""}</Text></Button> : null}
         <Button title="完成" buttonStyle="plain" action={() => CustomKeyboard.dismiss()} />
@@ -480,6 +486,7 @@ function SmartReplyKeyboard() {
           <Button buttonStyle="plain" action={() => setShowContext(!showContext)}>
             <Text modifiers={modifiers().font(12).foregroundStyle("tint")}>{showContext ? "收起上下文⌃" : "＋ 添加上下文"}</Text>
           </Button>
+          {canClear ? <Button buttonStyle="plain" action={clearDraft}><Text modifiers={modifiers().font(11).foregroundStyle("secondaryLabel")}>清空</Text></Button> : null}
           <Spacer />
           <Button buttonStyle="borderedProminent" tint="blue" buttonBorderShape={{ roundedRectangleRadius: 14 }} action={() => { if (!busy) void generate() }}><Text modifiers={modifiers().bold()}>{busy ? "生成中" : hasReplyResults ? "重新生成" : "生成回复"}</Text></Button>
         </HStack>
@@ -487,27 +494,7 @@ function SmartReplyKeyboard() {
       <HStack spacing={4} modifiers={modifiers().frame({ maxWidth: "infinity" })}>
         <Text modifiers={modifiers().font(11).foregroundStyle("tertiaryLabel")}>{notice}</Text>
         <Spacer />
-        {authMode === "chatgptPlan"
-          ? usageLimitReached
-            ? <Button buttonStyle="borderedProminent" tint="blue" action={() => { setUsageLimitReached(false); void Safari.openURL(CHATGPT_USAGE_URL) }}><Text modifiers={modifiers().font(11).bold()}>管理用量</Text></Button>
-            : <Button buttonStyle="plain" action={() => { void Safari.openURL(CHATGPT_USAGE_URL) }}><Text modifiers={modifiers().font(11).foregroundStyle("tint")}>管理用量</Text></Button>
-          : null}
         {retryText && !usageLimitReached ? <Button buttonStyle="plain" action={() => { if (!busy) void generate(retryText) }}><Text modifiers={modifiers().font(11).foregroundStyle("tint")}>重试</Text></Button> : null}
-        <Button buttonStyle="plain" action={() => {
-          activeRequestId++
-          activeRequest?.abort()
-          activeRequest = null
-          setBusy(false)
-          setSentence("")
-          setTranscript("")
-          setShowContext(false)
-          setSelectedOpponent("")
-          setLastInputLength(0)
-          setRetryText("")
-          setHasReplyResults(false)
-          setReplies(["先粘贴对方消息", "再点击生成回复", "点选即可插入"])
-          setNotice("已清空")
-        }}><Text modifiers={modifiers().font(11).foregroundStyle("secondaryLabel")}>清空</Text></Button>
       </HStack>
       {replyCards}
     </VStack>
