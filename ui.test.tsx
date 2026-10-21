@@ -69,6 +69,7 @@ async function launch(file, initial = loadLibrary(null), db = createDatabase()) 
       get textAfterCursor() { return host.after },
       get selectedText() { return host.selected },
       get allText() { return host.before + (host.selected || "") + (host.after || "") },
+      get hasText() { return this.allText.length > 0 },
       insertText(text) {
         if (host.failInsert) throw new Error("No input")
         host.inserted.push(text)
@@ -82,6 +83,12 @@ async function launch(file, initial = loadLibrary(null), db = createDatabase()) 
       deleteBackward() {
         if (host.failDelete) throw new Error("No input")
         host.before = Array.from(host.before).slice(0, -1).join("")
+      },
+      moveCursor(offset) {
+        const right = Array.from(host.after || "")
+        const count = Math.max(0, Math.min(right.length, Math.trunc(offset)))
+        host.before += right.slice(0, count).join("")
+        host.after = right.slice(count).join("")
       },
       playInputClick() { if (host.failSound) throw new Error("No audio"); host.clicks++ },
       dismiss() { host.keyboardDismissed = true },
@@ -144,31 +151,26 @@ test("category capsules insert a random phrase and repeat taps replace it with n
   assert.equal(host.keyboardDismissed, true)
 })
 
-test("clear removes only the latest keyboard insertion and preserves the user's draft prefix", async () => {
+test("clear input removes all draft text before and after the cursor, even without a keyboard insertion", async () => {
   const host = await launch("keyboard.tsx")
-  host.before = "用户先写的内容："
-  const category = loadLibrary(null).categories.find((item) => item.id === "valorant")
-  button(host.root, category.title).props.action()
-  await settle()
-  const inserted = host.inserted[0]
-  button(host.root, "清空").props.action()
-  assert.equal(host.before, "用户先写的内容：")
-  assert.equal(host.inserted.length, 1)
-  assert.match(label(host.root.render()), /已清除刚填入的文本/)
-  assert.equal(nodes(host.root.render()).some((item) => item.type === "Button" && label(item) === "清空"), false)
-  assert.ok(inserted)
+  host.before = "光标前的草稿"
+  host.after = "光标后的草稿"
+  button(host.root, "清空输入").props.action()
+  assert.equal(host.before, "")
+  assert.equal(host.after, "")
+  assert.deepEqual(host.inserted, [])
+  assert.match(label(host.root.render()), /已清空输入框/)
 })
 
-test("clear does not delete a phrase after the user changes text at the cursor", async () => {
+test("clear input refuses to act when text is selected or cursor context is ambiguous", async () => {
   const host = await launch("keyboard.tsx")
-  const category = loadLibrary(null).categories.find((item) => item.id === "valorant")
-  button(host.root, category.title).props.action()
-  await settle()
-  const draft = `${host.before}（保留这段手动编辑）`
-  host.before = draft
-  button(host.root, "清空").props.action()
-  assert.equal(host.before, draft)
-  assert.match(label(host.root.render()), /位置已变化，未清除内容/)
+  host.before = "草稿前"
+  host.after = "草稿后"
+  host.selected = "选中内容"
+  const draft = host.before + host.selected + host.after
+  button(host.root, "清空输入").props.action()
+  assert.equal(host.before + host.selected + host.after, draft)
+  assert.match(label(host.root.render()), /请先取消文字选区再清空/)
 })
 
 test("a long phrase is replaced when the host truncates before-cursor context", async () => {

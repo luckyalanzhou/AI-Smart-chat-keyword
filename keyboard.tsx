@@ -139,21 +139,40 @@ function QuickMessageKeyboard({ store, initialPage, initialScenes }: { store: Me
     applyMessage(previousMessage)
   }
 
-  function clearInserted() {
-    if (!lastInserted || loading) return
+  function clearInput() {
+    if (loading) return
     const context = inputContext()
-    const units = graphemes(lastInserted.message.text)
-    if (!canReplaceInsertedMessage({ ...lastInserted, text: lastInserted.message.text }, context) || !units) {
-      setNotice("位置已变化，未清除内容")
+    if (!context || typeof context.allText !== "string" || typeof context.before !== "string") {
+      setNotice("无法读取完整输入，未清空")
+      return
+    }
+    if (context.selected) {
+      setNotice("请先取消文字选区再清空")
+      return
+    }
+    const units = graphemes(context.allText)
+    const afterUnits = typeof context.after === "string" ? graphemes(context.after)
+      : context.after === null && context.allText === context.before ? [] : null
+    if (!units || !afterUnits) {
+      setNotice("无法确认光标位置，未清空")
+      return
+    }
+    if (!units.length) {
+      setNotice("输入框已经是空的")
       return
     }
     try {
-      for (let index = 0; index < units.length; index++) CustomKeyboard.deleteBackward()
+      if (afterUnits.length) CustomKeyboard.moveCursor(afterUnits.length)
+      for (let index = 0; index < units.length && CustomKeyboard.hasText; index++) CustomKeyboard.deleteBackward()
+      if (inputContext()?.allText !== "") {
+        setNotice("未能清空全部内容，请检查输入框")
+        return
+      }
       setLastInserted(null)
       setPreviousMessage(null)
       setCurrentMessage(null)
       setShowAnswer(false)
-      setNotice("已清除刚填入的文本")
+      setNotice("已清空输入框")
     } catch {
       setNotice("清空未完成；请检查输入框内容")
     }
@@ -200,7 +219,7 @@ function QuickMessageKeyboard({ store, initialPage, initialScenes }: { store: Me
 
       <HStack spacing={8}>
         {previousMessage ? <Button title="上一句" buttonStyle="plain" disabled={loading} action={showPrevious} /> : null}
-        {lastInserted ? <Button title="清空" buttonStyle="plain" disabled={loading} action={clearInserted} /> : null}
+        <Button title="清空输入" role="destructive" buttonStyle="plain" disabled={loading} action={clearInput} />
         <Spacer />
         <Text modifiers={modifiers().font(11).foregroundStyle("secondaryLabel")}>不自动发送</Text>
       </HStack>
