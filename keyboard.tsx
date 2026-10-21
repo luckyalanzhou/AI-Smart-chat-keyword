@@ -50,8 +50,6 @@ function QuickMessageKeyboard({ store, initialPage, initialScenes }: { store: Me
   const [currentMessage, setCurrentMessage] = useState<QuickMessage | null>(null)
   const [showAnswer, setShowAnswer] = useState(false)
   const [drawBags, setDrawBags] = useState<Record<string, { remaining: string[]; lastId: string }>>({})
-  const currentCategory = initialPage.categories.find((item) => item.id === categoryId) || initialPage.categories[0]
-
   function fillAtCursor(item: QuickMessage, successNotice = "已填入 · 发送前可修改") {
     try {
       CustomKeyboard.insertText(item.text)
@@ -172,29 +170,24 @@ function QuickMessageKeyboard({ store, initialPage, initialScenes }: { store: Me
         </HStack>
       </ScrollView> : null}
 
-      <VStack alignment="leading" spacing={4} padding={{ horizontal: 8, vertical: 5 }} modifiers={modifiers().frame({ maxWidth: "infinity", maxHeight: "infinity" })}>
-        {currentMessage ? <VStack alignment="leading" spacing={4}>
-          <Text modifiers={modifiers().font(12).foregroundStyle("secondaryLabel")}>{currentCategory?.title || "快捷消息"}{currentMessage.scene ? ` · ${currentMessage.scene}` : ""}</Text>
-          {currentMessage.answer ? <HStack>
-            <Button title={showAnswer ? "收起答案" : "查看答案"} buttonStyle="plain" disabled={loading} action={() => setShowAnswer(!showAnswer)} />
-            {showAnswer ? <Button title="填入答案" buttonStyle="bordered" disabled={loading} action={fillAnswer} /> : null}
-          </HStack> : null}
-          {showAnswer && currentMessage.answer ? <Text modifiers={modifiers().font(14).foregroundStyle("label")}>{currentMessage.answer}</Text> : null}
-        </VStack> : <Text modifiers={modifiers().font(14).foregroundStyle("secondaryLabel")}>点上方胶囊，抽取一条消息</Text>}
-      </VStack>
+      {currentMessage?.answer ? <VStack alignment="leading" spacing={4} padding={{ horizontal: 8, vertical: 2 }}>
+        <HStack>
+          <Button title={showAnswer ? "收起答案" : "查看答案"} buttonStyle="plain" disabled={loading} action={() => setShowAnswer(!showAnswer)} />
+          {showAnswer ? <Button title="填入答案" buttonStyle="bordered" disabled={loading} action={fillAnswer} /> : null}
+        </HStack>
+        {showAnswer ? <Text modifiers={modifiers().font(14).foregroundStyle("label")}>{currentMessage.answer}</Text> : null}
+      </VStack> : null}
 
       <HStack spacing={8}>
-        <Button title="上一句" buttonStyle="plain" disabled={loading || !previousMessage} action={showPrevious} />
+        {previousMessage ? <Button title="上一句" buttonStyle="plain" disabled={loading} action={showPrevious} /> : null}
         <Spacer />
-        <Text modifiers={modifiers().font(11).foregroundStyle("secondaryLabel")}>{currentCategory?.title || "选择分类"}{currentMessage?.scene ? ` · ${currentMessage.scene}` : ""}</Text>
-        <Spacer />
-        <Text modifiers={modifiers().font(11).foregroundStyle("secondaryLabel")}>点胶囊直接填入，不自动发送</Text>
+        <Text modifiers={modifiers().font(11).foregroundStyle("secondaryLabel")}>不自动发送</Text>
       </HStack>
     </VStack>
   )
 }
 
-CustomKeyboard.requestHeight(320)
+CustomKeyboard.requestHeight(216)
 async function run() {
   let element
   try {

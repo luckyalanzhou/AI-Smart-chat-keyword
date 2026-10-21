@@ -124,7 +124,7 @@ function field(screen, title) {
 test("category capsules insert a random phrase and repeat taps replace it with nullable host context", async () => {
   const host = await launch("keyboard.tsx")
   assert.equal(host.presentations, 1)
-  assert.deepEqual(host.heights, [320])
+  assert.deepEqual(host.heights, [216])
   assert.equal(nodes(host.root.render()).some((item) => item.type === "TextField"), false)
   const category = loadLibrary(null).categories.find((item) => item.id === "valorant")
   button(host.root, category.title).props.action()
