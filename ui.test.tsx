@@ -17,7 +17,7 @@ async function launch(file, initial = loadLibrary(null), db = createDatabase()) 
   databases.add(db)
   const store = await openMessageStore(db, initial)
   const values = new Map([[LIBRARY_STORAGE_KEY, JSON.parse(JSON.stringify(initial))], ["unrelated.setting", { value: "keep" }]])
-  const host = { values, screens: [], inserted: [], clicks: 0, heights: [], presentations: 0, failWrite: false, failInsert: false, failSound: false, confirm: true, prompt: null }
+  const host = { values, screens: [], inserted: [], clicks: 0, heights: [], presentations: 0, before: "", after: "", selected: "", failWrite: false, failInsert: false, failDelete: false, failSound: false, confirm: true, prompt: null }
   host.store = store
   host.db = db
   Object.defineProperty(host, "failWrite", { get: () => db.failWrite, set: (value) => { db.failWrite = value } })
@@ -55,7 +55,7 @@ async function launch(file, initial = loadLibrary(null), db = createDatabase()) 
   assert.equal(compiled.diagnostics.filter((item) => item.category === ts.DiagnosticCategory.Error).length, 0)
   const sandbox = {
     exports: {},
-    require(name) { if (name === "scripting") return scripting; if (name === "./message-store.js") return { openLocalMessageStore: async () => store }; throw new Error(`Unexpected import: ${name}`) },
+    require(name) { if (name === "scripting") return scripting; if (name === "./message-store.js") return { openLocalMessageStore: async () => store }; if (name === "./quick-messages.js") return require("./quick-messages.js"); throw new Error(`Unexpected import: ${name}`) },
     h: (type, props, ...children) => ({ type, props: { ...props, children }, children }),
     Storage: {
       get(key, options) { assert.equal(options?.shared, true); return JSON.parse(JSON.stringify(values.get(key) ?? null)) },
@@ -64,7 +64,23 @@ async function launch(file, initial = loadLibrary(null), db = createDatabase()) 
     CustomKeyboard: {
       requestHeight(height) { host.heights.push(height) },
       present(element) { host.presentations++; screen(element) },
-      insertText(text) { if (host.failInsert) throw new Error("No input"); host.inserted.push(text) },
+      get textBeforeCursor() { return host.before },
+      get textAfterCursor() { return host.after },
+      get selectedText() { return host.selected },
+      insertText(text) {
+        if (host.failInsert) throw new Error("No input")
+        host.inserted.push(text)
+        if (host.selected) {
+          host.before += host.selected
+          host.after = host.after
+          host.selected = ""
+        }
+        host.before += text
+      },
+      deleteBackward() {
+        if (host.failDelete) throw new Error("No input")
+        host.before = Array.from(host.before).slice(0, -1).join("")
+      },
       playInputClick() { if (host.failSound) throw new Error("No audio"); host.clicks++ },
       dismiss() { host.keyboardDismissed = true },
     },
@@ -103,74 +119,71 @@ function field(screen, title) {
   return found
 }
 
-test("keyboard presents once, inserts selected text verbatim and leaves sending to the host", async () => {
+test("category capsules immediately insert a random phrase and repeat taps replace it", async () => {
   const host = await launch("keyboard.tsx")
   assert.equal(host.presentations, 1)
   assert.deepEqual(host.heights, [320])
   assert.equal(nodes(host.root.render()).some((item) => item.type === "TextField"), false)
-  const first = loadLibrary(null).categories[0].messages[0]
-  button(host.root, first.text).props.action()
-  assert.deepEqual(host.inserted, [first.text])
+  const category = loadLibrary(null).categories.find((item) => item.id === "valorant")
+  button(host.root, category.title).props.action()
+  await settle()
+  const first = host.inserted[0]
+  assert.ok(category.messages.some((message) => message.text === first))
   assert.equal(host.clicks, 1)
   assert.match(label(host.root.render()), /已填入/)
+  button(host.root, category.title).props.action()
+  await settle()
+  const second = host.inserted[1]
+  assert.ok(category.messages.some((message) => message.text === second))
+  assert.equal(host.before, second)
+  assert.equal(host.inserted.length, 2)
+  assert.match(label(host.root.render()), /已换句/)
   button(host.root, "完成").props.action()
   assert.equal(host.keyboardDismissed, true)
 })
 
-test("category switching and pagination reset selection without inserting any text", async () => {
+test("VALORANT scene capsules limit the random draw to the selected scene", async () => {
   const host = await launch("keyboard.tsx")
-  assert.equal(button(host.root, "上一页").props.disabled, true)
-  button(host.root, "下一页").props.action()
+  const category = loadLibrary(null).categories.find((item) => item.id === "valorant")
+  button(host.root, category.title).props.action()
   await settle()
-  button(host.root, loadLibrary(null).categories[0].messages[4].text)
-  button(host.root, "笑话").props.action()
+  const scene = button(host.root, "残局沟通 · 13")
+  scene.props.action()
   await settle()
-  button(host.root, loadLibrary(null).categories.find((item) => item.id === "jokes").messages[0].text)
-  assert.equal(button(host.root, "上一页").props.disabled, true)
-  assert.deepEqual(host.inserted, [])
+  const selected = category.messages.filter((message) => message.scene === "残局沟通")
+  assert.ok(selected.some((message) => message.text === host.inserted.at(-1)))
+  assert.equal(nodes(host.root.render()).some((item) => item.type === "Button" && label(item) === "下一页"), false)
 })
 
-test("a slower category query cannot overwrite a newer keyboard selection", async () => {
+test("shuffle bag avoids repeats until all phrases in the chosen scene have been drawn", async () => {
   const host = await launch("keyboard.tsx")
-  const readPage = host.store.readPage
-  const pending = []
-  host.store.readPage = (id, index) => new Promise((resolve) => pending.push(async () => resolve(await readPage(id, index))))
-  button(host.root, "笑话").props.action()
-  assert.equal(button(host.root, loadLibrary(null).categories[0].messages[0].text).props.disabled, true)
-  button(host.root, "脑筋急转弯").props.action()
-  await pending[1]()
+  const category = loadLibrary(null).categories.find((item) => item.id === "valorant")
+  button(host.root, category.title).props.action()
   await settle()
-  const riddle = loadLibrary(null).categories.find((category) => category.id === "riddles").messages[0]
-  button(host.root, riddle.text)
-  await pending[0]()
+  button(host.root, "残局沟通 · 13").props.action()
   await settle()
-  button(host.root, riddle.text)
-  assert.deepEqual(host.inserted, [])
+  const seen = new Set([host.inserted.at(-1)])
+  for (let index = 1; index < 13; index++) {
+    button(host.root, "残局沟通 · 13").props.action()
+    await settle()
+    seen.add(host.inserted.at(-1))
+  }
+  assert.equal(seen.size, 13)
 })
 
-test("the keyboard can pick another page without inserting a message", async () => {
-  const host = await launch("keyboard.tsx")
-  button(host.root, "换一组").props.action()
-  await settle()
-  assert.equal(button(host.root, "上一页").props.disabled, false)
-  assert.deepEqual(host.inserted, [])
-})
-
-test("riddle question, answer reveal and answer insertion are separate actions", async () => {
+test("riddle question, answer reveal and answer replacement are separate actions", async () => {
   const host = await launch("keyboard.tsx")
   const riddle = loadLibrary(null).categories.find((item) => item.id === "riddles").messages[0]
   button(host.root, "脑筋急转弯").props.action()
   await settle()
-  assert.equal(label(host.root.render()).includes(riddle.answer), false)
-  button(host.root, riddle.text).props.action()
-  assert.deepEqual(host.inserted, [riddle.text])
-  button(host.root, "答案").props.action()
-  assert.deepEqual(host.inserted, [riddle.text])
-  button(host.root, `填入答案：${riddle.answer}`).props.action()
-  assert.deepEqual(host.inserted, [riddle.text, riddle.answer])
-  button(host.root, "下一页").props.action()
-  await settle()
-  assert.equal(label(host.root.render()).includes(riddle.answer), false)
+  const firstQuestion = host.inserted.at(-1)
+  const message = loadLibrary(null).categories.find((item) => item.id === "riddles").messages.find((item) => item.text === firstQuestion)
+  assert.equal(label(host.root.render()).includes(message.answer), false)
+  button(host.root, "查看答案").props.action()
+  assert.match(label(host.root.render()), new RegExp(message.answer.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")))
+  button(host.root, "填入答案").props.action()
+  assert.equal(host.before, message.answer)
+  assert.deepEqual(host.inserted, [firstQuestion, message.answer])
 })
 
 test("saved preferences hide categories, set the default and suppress click audio", async () => {
@@ -178,31 +191,81 @@ test("saved preferences hide categories, set the default and suppress click audi
   library = editLibrary(library, { type: "category.update", categoryId: "valorant", enabled: false })
   const host = await launch("keyboard.tsx", library)
   assert.equal(nodes(host.root.render()).some((item) => item.type === "Button" && label(item) === "无畏契约回怼"), false)
-  button(host.root, library.categories.find((item) => item.id === "jokes").messages[0].text).props.action()
+  button(host.root, library.categories.find((item) => item.id === "jokes").title).props.action()
+  await settle()
   assert.equal(host.clicks, 0)
+})
+
+test("changed input context shows an explicit candidate instead of replacing user text", async () => {
+  const host = await launch("keyboard.tsx")
+  const category = loadLibrary(null).categories.find((item) => item.id === "valorant")
+  button(host.root, category.title).props.action()
+  await settle()
+  const original = host.before
+  host.before = `${original}（用户修改）`
+  button(host.root, category.title).props.action()
+  await settle()
+  assert.equal(host.inserted.length, 1)
+  assert.equal(host.before, `${original}（用户修改）`)
+  assert.match(label(host.root.render()), /无法确认上次句子的位置/)
+  button(host.root, "填入").props.action()
+  assert.equal(host.inserted.length, 2)
+  assert.equal(host.before, `${original}（用户修改）${host.inserted[1]}`)
+})
+
+test("selected text prevents silent replacement and candidate cancellation is safe", async () => {
+  const host = await launch("keyboard.tsx")
+  const category = loadLibrary(null).categories.find((item) => item.id === "valorant")
+  button(host.root, category.title).props.action()
+  await settle()
+  host.selected = "已选中的用户文字"
+  button(host.root, category.title).props.action()
+  await settle()
+  const beforeCancel = host.before
+  assert.equal(host.inserted.length, 1)
+  button(host.root, "取消").props.action()
+  assert.equal(host.before, beforeCancel)
+  assert.equal(host.inserted.length, 1)
+})
+
+test("a failed delete keeps the previous phrase and presents an honest recovery option", async () => {
+  const host = await launch("keyboard.tsx")
+  const category = loadLibrary(null).categories.find((item) => item.id === "valorant")
+  button(host.root, category.title).props.action()
+  await settle()
+  const previous = host.before
+  host.failDelete = true
+  button(host.root, category.title).props.action()
+  await settle()
+  assert.equal(host.before, previous)
+  assert.equal(host.inserted.length, 1)
+  assert.match(label(host.root.render()), /替换操作未完成，请先检查输入框/)
 })
 
 test("host insertion failures show feedback instead of claiming success", async () => {
   const host = await launch("keyboard.tsx")
   host.failInsert = true
-  button(host.root, loadLibrary(null).categories[0].messages[0].text).props.action()
+  button(host.root, loadLibrary(null).categories.find((item) => item.id === "valorant").title).props.action()
+  await settle()
   assert.deepEqual(host.inserted, [])
-  assert.match(label(host.root.render()), /请先点选输入框/)
+  assert.match(label(host.root.render()), /填入失败/)
 })
 
 test("an unavailable click sound does not turn a successful insertion into an error", async () => {
   const host = await launch("keyboard.tsx")
   host.failSound = true
-  const text = loadLibrary(null).categories[0].messages[0].text
-  button(host.root, text).props.action()
-  assert.deepEqual(host.inserted, [text])
+  const category = loadLibrary(null).categories.find((item) => item.id === "valorant")
+  button(host.root, category.title).props.action()
+  await settle()
+  assert.equal(host.inserted.length, 1)
   assert.match(label(host.root.render()), /已填入/)
 })
 
-test("settings can add a multiline snippet and the reopened keyboard uses it", async () => {
+test("settings can add a scene-tagged multiline snippet and persist it for keyboard filtering", async () => {
   const host = await launch("index.tsx")
   button(host.root, "添加消息").props.action()
   const editor = host.screens.at(-1)
+  field(editor, "场景").props.onChanged("开黑沟通")
   field(editor, "消息内容").props.onChanged("第一行\n第二行")
   field(editor, "答案（可选）").props.onChanged("独立答案")
   button(editor, "保存").props.action()
@@ -210,13 +273,10 @@ test("settings can add a multiline snippet and the reopened keyboard uses it", a
   assert.equal(editor.dismissed, 1)
   const saved = await host.store.readLibrary()
   assert.equal(saved.categories[0].messages.at(-1).text, "第一行\n第二行")
-  const keyboard = await launch("keyboard.tsx", undefined, host.db)
-  while (!button(keyboard.root, "下一页").props.disabled) {
-    button(keyboard.root, "下一页").props.action()
-    await settle()
-  }
-  button(keyboard.root, "第一行\n第二行").props.action()
-  assert.deepEqual(keyboard.inserted, ["第一行\n第二行"])
+  assert.equal(saved.categories[0].messages.at(-1).scene, "开黑沟通")
+  const scenes = await host.store.readScenes("valorant")
+  assert.ok(scenes.some((scene) => scene.id === "开黑沟通" && scene.count === 1))
+  assert.equal((await host.store.readSceneMessages("valorant", "开黑沟通"))[0].text, "第一行\n第二行")
   assert.deepEqual(host.values.get("unrelated.setting"), { value: "keep" })
 })
 

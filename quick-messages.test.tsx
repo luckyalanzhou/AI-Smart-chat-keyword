@@ -1,6 +1,6 @@
 const assert = require("node:assert/strict")
 const { test } = require("node:test")
-const { loadLibrary, editLibrary, getMessagePage, PAGE_SIZE } = require("./quick-messages.js")
+const { loadLibrary, editLibrary, getMessagePage, drawNextMessage, canReplaceInsertedMessage, PAGE_SIZE } = require("./quick-messages.js")
 
 test("the offline catalog includes game comebacks, jokes and separate riddle answers", () => {
   const library = loadLibrary(null)
@@ -8,6 +8,7 @@ test("the offline catalog includes game comebacks, jokes and separate riddle ans
   assert.equal(library.defaultCategoryId, "valorant")
   assert.equal(library.categories[0].messages.length, 120)
   assert.equal(library.categories.reduce((count, category) => count + category.messages.length, 0), 510)
+  assert.deepEqual([...new Set(library.categories[0].messages.map((message) => message.scene))], ["补枪协同", "复盘与态度", "残局沟通", "报点信息", "经济与战术"])
   const riddles = library.categories.find((category) => category.id === "riddles")
   assert.ok(riddles.messages.every((message) => message.answer && !message.text.includes(message.answer)))
   const ids = library.categories.flatMap((category) => [category.id, ...category.messages.map((message) => message.id)])
@@ -126,4 +127,39 @@ test("malformed stored records are handled without reintroducing deleted default
   assert.equal(library.defaultCategoryId, "custom")
   assert.equal(library.soundEnabled, false)
   assert.equal(loadLibrary({ version: 1, categories: [] }).categories.length, 7)
+})
+
+test("scene labels persist through edits and can be cleared safely", () => {
+  const library = loadLibrary(null)
+  const original = library.categories[0].messages[0]
+  let next = editLibrary(library, { type: "message.save", categoryId: "valorant", id: original.id, text: original.text, scene: "残局沟通" })
+  assert.equal(next.categories[0].messages[0].scene, "残局沟通")
+  next = editLibrary(next, { type: "message.save", categoryId: "valorant", id: original.id, text: original.text, scene: "" })
+  assert.equal(next.categories[0].messages[0].scene, undefined)
+  assert.throws(() => editLibrary(library, { type: "message.save", categoryId: "valorant", id: original.id, text: original.text, scene: "这是一个超过十二个字的场景名称" }), /12 个字/)
+})
+
+test("shuffle bags do not repeat before exhausting a scene and avoid a cycle-boundary repeat", () => {
+  const messages = [{ id: "a", text: "甲" }, { id: "b", text: "乙" }, { id: "c", text: "丙" }]
+  const random = () => 0
+  let state = {}
+  const drawn = []
+  for (let index = 0; index < 3; index++) {
+    const result = drawNextMessage(messages, state, random)
+    drawn.push(result.message.id)
+    state = result.state
+  }
+  assert.equal(new Set(drawn).size, 3)
+  const next = drawNextMessage(messages, state, random)
+  assert.notEqual(next.message.id, drawn.at(-1))
+  assert.equal(drawNextMessage([], state).message, null)
+})
+
+test("replacement requires a matching suffix, unchanged following context and no selection", () => {
+  const previous = { text: "原来的句子", after: " 草稿尾部" }
+  assert.equal(canReplaceInsertedMessage(previous, { before: "前缀原来的句子", after: " 草稿尾部", selected: "" }), true)
+  assert.equal(canReplaceInsertedMessage(previous, { before: "原来的句子已修改", after: " 草稿尾部", selected: "" }), false)
+  assert.equal(canReplaceInsertedMessage(previous, { before: "原来的句子", after: "别的内容", selected: "" }), false)
+  assert.equal(canReplaceInsertedMessage(previous, { before: "原来的句子", after: " 草稿尾部", selected: "选中" }), false)
+  assert.equal(canReplaceInsertedMessage(previous, { before: null, after: " 草稿尾部" }), false)
 })

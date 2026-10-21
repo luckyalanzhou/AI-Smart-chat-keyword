@@ -35,7 +35,8 @@ export function loadLibrary(value) {
       if (!message || !text(message.id) || !text(message.text) || messageIds.has(message.id)) continue
       messageIds.add(message.id)
       const answer = text(message.answer)
-      messages.push({ id: message.id, text: text(message.text), ...(answer ? { answer } : {}) })
+      const scene = [...text(message.scene)].slice(0, 12).join("")
+      messages.push({ id: message.id, text: text(message.text), ...(answer ? { answer } : {}), ...(scene ? { scene } : {}) })
     }
     categories.push({ id: category.id, title: text(category.title), enabled: category.enabled !== false, messages })
   }
@@ -99,11 +100,14 @@ export function editLibrary(library, change) {
     } else if (change.type === "message.save") {
       const content = checkedText(change.text, "消息内容", 500)
       const answer = text(change.answer)
+      const existing = change.id ? category.messages.find((item) => item.id === change.id) : undefined
+      const scene = change.scene === undefined ? existing?.scene || "" : text(change.scene)
+      if ([...scene].length > 12) throw new Error("场景名称不能超过 12 个字")
       if ([...answer].length > 500) throw new Error("答案不能超过 500 个字")
       if (category.messages.some((item) => item.id !== change.id && item.text === content)) throw new Error("该分类已有相同消息")
       const index = change.id ? category.messages.findIndex((item) => item.id === change.id) : -1
       if (change.id && index < 0) throw new Error("消息已不存在，请重新选择")
-      const message = { id: change.id || freshId(next, "message"), text: content, ...(answer ? { answer } : {}) }
+      const message = { id: change.id || freshId(next, "message"), text: content, ...(answer ? { answer } : {}), ...(scene ? { scene } : {}) }
       if (index < 0) category.messages.push(message)
       else category.messages[index] = message
     } else if (change.type === "message.remove") {
@@ -115,6 +119,34 @@ export function editLibrary(library, change) {
   }
   next.defaultCategoryId = defaultCategory(next.categories, next.defaultCategoryId).id
   return next
+}
+
+// Keeps one shuffled deck per category/scene; callers persist only its small in-memory state.
+export function drawNextMessage(messages, state = {}, random = Math.random) {
+  const byId = new Map(messages.map((message) => [message.id, message]))
+  let remaining = Array.isArray(state.remaining)
+    ? [...new Set(state.remaining)].filter((id) => byId.has(id))
+    : []
+  if (!remaining.length) {
+    remaining = [...byId.keys()]
+    for (let index = remaining.length - 1; index > 0; index--) {
+      const swapIndex = Math.floor(random() * (index + 1))
+      ;[remaining[index], remaining[swapIndex]] = [remaining[swapIndex], remaining[index]]
+    }
+    if (remaining.length > 1 && remaining[0] === state.lastId) [remaining[0], remaining[1]] = [remaining[1], remaining[0]]
+  }
+  const id = remaining.shift()
+  return {
+    message: id === undefined ? null : byId.get(id),
+    state: { remaining, lastId: id ?? state.lastId ?? "" },
+  }
+}
+
+export function canReplaceInsertedMessage(previous, context) {
+  return Boolean(previous && previous.text && context
+    && typeof context.before === "string" && context.before.endsWith(previous.text)
+    && typeof context.after === "string" && context.after === previous.after
+    && !context.selected)
 }
 
 export function getMessagePage(library, categoryId, pageIndex = 0) {

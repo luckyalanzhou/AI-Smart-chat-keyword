@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS categories (
 );
 CREATE TABLE IF NOT EXISTS messages (
   id TEXT PRIMARY KEY, category_id TEXT NOT NULL REFERENCES categories(id),
-  text TEXT NOT NULL, answer TEXT, position INTEGER NOT NULL, deleted INTEGER NOT NULL DEFAULT 0
+  text TEXT NOT NULL, answer TEXT, scene TEXT NOT NULL DEFAULT '', position INTEGER NOT NULL, deleted INTEGER NOT NULL DEFAULT 0
 );
 CREATE UNIQUE INDEX IF NOT EXISTS category_title ON categories(title) WHERE deleted = 0;
 CREATE UNIQUE INDEX IF NOT EXISTS message_text ON messages(category_id, text) WHERE deleted = 0;
@@ -19,14 +19,14 @@ CREATE INDEX IF NOT EXISTS message_page ON messages(category_id, deleted, positi
 `
 
 const categoryInsert = "INSERT OR IGNORE INTO categories (id, title, enabled, position, deleted) VALUES (?, ?, ?, ?, ?)"
-const messageInsert = "INSERT OR IGNORE INTO messages (id, category_id, text, answer, position, deleted) SELECT ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM categories WHERE id = ?)"
+const messageInsert = "INSERT OR IGNORE INTO messages (id, category_id, text, answer, scene, position, deleted) SELECT ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM categories WHERE id = ?)"
 const preferenceSave = "INSERT INTO preferences (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value"
 const legacyCounts = { valorant: 24, comebacks: 10, jokes: 10, riddles: 10, banter: 10, praise: 8, daily: 10 }
 
 function appendCategory(steps, category, position, deleted = 0) {
   steps.push({ sql: categoryInsert, args: [category.id, category.title, category.enabled ? 1 : 0, position, deleted] })
   for (const [index, message] of category.messages.entries()) {
-    steps.push({ sql: messageInsert, args: [message.id, category.id, message.text, message.answer || null, index, deleted, category.id] })
+    steps.push({ sql: messageInsert, args: [message.id, category.id, message.text, message.answer || null, message.scene || "", index, deleted, category.id] })
   }
 }
 
@@ -37,7 +37,10 @@ async function readPreferences(db) {
 // The same interface is used by native Scripting SQLite and the real-SQLite tests.
 export async function openMessageStore(db, legacy, catalog = BUILTIN_CATALOG, catalogVersion = CATALOG_VERSION) {
   await db.execute(schema)
+  const columns = await db.fetchAll("PRAGMA table_info(messages)")
+  if (!columns.some((column) => column.name === "scene")) await db.execute("ALTER TABLE messages ADD COLUMN scene TEXT NOT NULL DEFAULT ''")
   const preferences = await readPreferences(db)
+  const previousCatalogVersion = Number(preferences.catalogVersion || 0)
   if (Number(preferences.catalogVersion || 0) < catalogVersion) {
     const steps = []
     const migrating = !preferences.catalogVersion && legacy?.version === 1 && Array.isArray(legacy.categories) && legacy.categories.length > 0
@@ -50,13 +53,18 @@ export async function openMessageStore(db, legacy, catalog = BUILTIN_CATALOG, ca
         if (!existing) appendCategory(steps, category, index, 1)
         else for (const [messageIndex, message] of category.messages.entries()) {
           if (messageIndex >= (legacyCounts[category.id] || 0) || existing.messages.some((item) => item.id === message.id)) continue
-          steps.push({ sql: messageInsert, args: [message.id, category.id, message.text, message.answer || null, messageIndex, 1, category.id] })
+          steps.push({ sql: messageInsert, args: [message.id, category.id, message.text, message.answer || null, message.scene || "", messageIndex, 1, category.id] })
         }
       })
       steps.push({ sql: "INSERT OR IGNORE INTO preferences (key, value) VALUES (?, ?)", args: ["defaultCategoryId", previous.defaultCategoryId] })
       steps.push({ sql: "INSERT OR IGNORE INTO preferences (key, value) VALUES (?, ?)", args: ["soundEnabled", String(previous.soundEnabled)] })
     }
     catalog.forEach((category, index) => appendCategory(steps, category, index))
+    if (previousCatalogVersion < 3 && catalogVersion >= 3) {
+      for (const category of catalog) for (const message of category.messages) {
+        if (message.scene) steps.push({ sql: "UPDATE messages SET scene = ? WHERE id = ? AND scene = ''", args: [message.scene, message.id] })
+      }
+    }
     steps.push(
       { sql: "INSERT OR IGNORE INTO preferences (key, value) VALUES ('defaultCategoryId', 'valorant')" },
       { sql: "INSERT OR IGNORE INTO preferences (key, value) VALUES ('soundEnabled', 'true')" },
@@ -68,13 +76,13 @@ export async function openMessageStore(db, legacy, catalog = BUILTIN_CATALOG, ca
   async function readLibrary() {
     const [categories, messages, prefs] = await Promise.all([
       db.fetchAll("SELECT id, title, enabled FROM categories WHERE deleted = 0 ORDER BY position, id"),
-      db.fetchAll("SELECT m.id, m.category_id, m.text, m.answer FROM messages m JOIN categories c ON c.id = m.category_id WHERE m.deleted = 0 AND c.deleted = 0 ORDER BY m.position, m.id"),
+      db.fetchAll("SELECT m.id, m.category_id, m.text, m.answer, m.scene FROM messages m JOIN categories c ON c.id = m.category_id WHERE m.deleted = 0 AND c.deleted = 0 ORDER BY m.position, m.id"),
       readPreferences(db),
     ])
     const grouped = new Map()
     for (const message of messages) {
       if (!grouped.has(message.category_id)) grouped.set(message.category_id, [])
-      grouped.get(message.category_id).push({ id: message.id, text: message.text, ...(message.answer ? { answer: message.answer } : {}) })
+      grouped.get(message.category_id).push({ id: message.id, text: message.text, ...(message.answer ? { answer: message.answer } : {}), ...(message.scene ? { scene: message.scene } : {}) })
     }
     return loadLibrary({ version: 1, defaultCategoryId: prefs.defaultCategoryId, soundEnabled: prefs.soundEnabled !== "false", categories: categories.map((category) => ({
       id: category.id, title: category.title, enabled: Boolean(category.enabled), messages: grouped.get(category.id) || [],
@@ -101,6 +109,20 @@ export async function openMessageStore(db, legacy, catalog = BUILTIN_CATALOG, ca
     }
   }
 
+  async function readScenes(categoryId) {
+    const rows = await db.fetchAll("SELECT m.scene, COUNT(*) AS count, MIN(m.position) AS first_position FROM messages m JOIN categories c ON c.id = m.category_id WHERE m.category_id = ? AND m.deleted = 0 AND c.deleted = 0 AND c.enabled = 1 GROUP BY m.scene ORDER BY first_position, m.scene", [categoryId])
+    const total = rows.reduce((sum, row) => sum + Number(row.count), 0)
+    return [{ id: "all", title: "全部随机", count: total }, ...rows.filter((row) => row.scene).map((row) => ({ id: row.scene, title: row.scene, count: Number(row.count) }))]
+  }
+
+  async function readSceneMessages(categoryId, sceneId = "all") {
+    const sql = sceneId === "all"
+      ? "SELECT id, text, answer, scene FROM messages WHERE category_id = ? AND deleted = 0 ORDER BY position, id"
+      : "SELECT id, text, answer, scene FROM messages WHERE category_id = ? AND scene = ? AND deleted = 0 ORDER BY position, id"
+    const rows = await db.fetchAll(sql, sceneId === "all" ? [categoryId] : [categoryId, sceneId])
+    return rows.map((message) => ({ id: message.id, text: message.text, ...(message.answer ? { answer: message.answer } : {}), ...(message.scene ? { scene: message.scene } : {}) }))
+  }
+
   async function applyChange(change) {
     const before = await readLibrary()
     const after = editLibrary(before, change)
@@ -125,10 +147,10 @@ export async function openMessageStore(db, legacy, catalog = BUILTIN_CATALOG, ca
       }
       for (const message of category.messages) {
         const old = oldMessages.get(message.id)
-        if (old && old.text === message.text && old.answer === message.answer) continue
+        if (old && old.text === message.text && old.answer === message.answer && old.scene === message.scene) continue
         steps.push({
-          sql: "INSERT INTO messages (id, category_id, text, answer, position) VALUES (?, ?, ?, ?, (SELECT COALESCE(MAX(position), -1) + 1 FROM messages WHERE category_id = ?)) ON CONFLICT(id) DO UPDATE SET text = excluded.text, answer = excluded.answer, deleted = 0",
-          args: [message.id, category.id, message.text, message.answer || null, category.id],
+          sql: "INSERT INTO messages (id, category_id, text, answer, scene, position) VALUES (?, ?, ?, ?, ?, (SELECT COALESCE(MAX(position), -1) + 1 FROM messages WHERE category_id = ?)) ON CONFLICT(id) DO UPDATE SET text = excluded.text, answer = excluded.answer, scene = excluded.scene, deleted = 0",
+          args: [message.id, category.id, message.text, message.answer || null, message.scene || "", category.id],
         })
       }
     }
@@ -141,7 +163,7 @@ export async function openMessageStore(db, legacy, catalog = BUILTIN_CATALOG, ca
 
   let writes = Promise.resolve()
   return {
-    readLibrary, readPage,
+    readLibrary, readPage, readScenes, readSceneMessages,
     change(change) {
       const result = writes.then(() => applyChange(change))
       writes = result.then(() => undefined, () => undefined)

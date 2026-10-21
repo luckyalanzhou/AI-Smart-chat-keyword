@@ -43,10 +43,57 @@ test("SQLite initializes 510 unique local messages and supports indexed page que
   assert.equal(page.total, 120)
   assert.equal(page.pageCount, 30)
   assert.equal(page.messages.length, 4)
-  assert.deepEqual(page.messages, BUILTIN_CATALOG[0].messages.slice(-4))
+  assert.deepEqual(page.messages, BUILTIN_CATALOG[0].messages.slice(-4).map(({ id, text, answer }) => ({ id, text, ...(answer ? { answer } : {}) })))
   assert.ok(db.queries.some((query) => query.includes("LIMIT ? OFFSET ?")))
   const plan = db.raw.prepare("EXPLAIN QUERY PLAN SELECT id, text FROM messages WHERE category_id = ? AND deleted = 0 ORDER BY position, id LIMIT 4").all("valorant")
   assert.ok(plan.some((row) => row.detail.includes("message_page")))
+})
+
+test("scene queries filter messages and return accurate capsule counts", async (t) => {
+  const db = createDatabase()
+  t.after(() => db.close())
+  const store = await openMessageStore(db)
+  const scenes = await store.readScenes("valorant")
+  assert.deepEqual(scenes.map(({ title, count }) => [title, count]), [
+    ["全部随机", 120], ["补枪协同", 28], ["复盘与态度", 50], ["残局沟通", 13], ["报点信息", 21], ["经济与战术", 8],
+  ])
+  const selected = await store.readSceneMessages("valorant", "残局沟通")
+  assert.equal(selected.length, 13)
+  assert.ok(selected.every((message) => message.scene === "残局沟通"))
+  assert.equal((await store.readSceneMessages("valorant", "all")).length, 120)
+  assert.equal((await store.readScenes("jokes")).length, 1)
+})
+
+test("version 2 database adds scene tags without changing existing message text", async (t) => {
+  const db = createDatabase()
+  t.after(() => db.close())
+  const oldCatalog = structuredClone(BUILTIN_CATALOG)
+  for (const category of oldCatalog) for (const message of category.messages) delete message.scene
+  let store = await openMessageStore(db, null, oldCatalog, 2)
+  const editedText = "保留旧版编辑"
+  await store.change({ type: "message.save", categoryId: "valorant", id: "valorant-1", text: editedText })
+  db.raw.exec("ALTER TABLE messages DROP COLUMN scene")
+  db.raw.prepare("UPDATE preferences SET value = '2' WHERE key = 'catalogVersion'").run()
+
+  store = await openMessageStore(db)
+
+  const library = await store.readLibrary()
+  const message = library.categories[0].messages.find((item) => item.id === "valorant-1")
+  assert.equal(message.text, editedText)
+  assert.equal(message.scene, "补枪协同")
+  assert.equal(library.categories[0].messages.length, 120)
+})
+
+test("scene labels persist for new and edited messages", async (t) => {
+  const db = createDatabase()
+  t.after(() => db.close())
+  let store = await openMessageStore(db)
+  await store.change({ type: "message.save", categoryId: "jokes", text: "场景消息", scene: "上班摸鱼" })
+  const before = await store.readLibrary()
+  const message = before.categories.find((item) => item.id === "jokes").messages.at(-1)
+  await store.change({ type: "message.save", categoryId: "jokes", id: message.id, text: message.text, scene: "午休" })
+  store = await openMessageStore(db)
+  assert.equal((await store.readLibrary()).categories.find((item) => item.id === "jokes").messages.at(-1).scene, "午休")
 })
 
 test("edits persist in an actual database file after closing and reopening", async (t) => {

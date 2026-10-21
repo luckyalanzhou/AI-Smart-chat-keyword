@@ -1,4 +1,4 @@
-import type { LibraryChange, MessageLibrary, MessagePage } from "./quick-messages.js"
+import type { LibraryChange, MessageLibrary, MessagePage, QuickMessage } from "./quick-messages.js"
 export type DatabasePage = Omit<MessagePage, "categories"> & {
   categories: { id: string; title: string; enabled: boolean; count: number }[]
   soundEnabled: boolean
@@ -6,6 +6,8 @@ export type DatabasePage = Omit<MessagePage, "categories"> & {
 export type MessageStore = {
   readLibrary(): Promise<MessageLibrary>
   readPage(categoryId?: string, pageIndex?: number): Promise<DatabasePage>
+  readScenes(categoryId: string): Promise<{ id: string; title: string; count: number }[]>
+  readSceneMessages(categoryId: string, sceneId?: string): Promise<QuickMessage[]>
   change(change: LibraryChange): Promise<MessageLibrary>
 }
 export const DATABASE_NAME: string

@@ -3,17 +3,18 @@ import { openLocalMessageStore } from "./message-store.js"
 import type { MessageStore } from "./message-store.js"
 import type { LibraryChange, MessageLibrary, QuickMessage } from "./quick-messages.js"
 
-function MessageEditor({ categoryTitle, message, onSave }: { categoryTitle: string; message?: QuickMessage; onSave: (text: string, answer: string) => Promise<void> }) {
+function MessageEditor({ categoryTitle, message, onSave }: { categoryTitle: string; message?: QuickMessage; onSave: (text: string, answer: string, scene: string) => Promise<void> }) {
   const dismiss = Navigation.useDismiss()
   const [text, setText] = useState(message?.text || "")
   const [answer, setAnswer] = useState(message?.answer || "")
+  const [scene, setScene] = useState(message?.scene || "")
   const [saving, setSaving] = useState(false)
   const [notice, setNotice] = useState("点选消息只填入正文，答案可在键盘中单独查看。")
   async function save() {
     if (saving) return
     setSaving(true)
     try {
-      await onSave(text, answer)
+      await onSave(text, answer, scene)
       dismiss()
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "保存失败，请重试")
@@ -27,6 +28,7 @@ function MessageEditor({ categoryTitle, message, onSave }: { categoryTitle: stri
       topBarTrailing: <Button title={saving ? "保存中…" : "保存"} disabled={saving || !text.trim()} action={() => { void save() }} />,
     }}>
       <Section header={<Text>{categoryTitle}</Text>} footer={<Text>{notice}</Text>}>
+        <TextField title="场景" prompt="例如：残局沟通；可留空" value={scene} onChanged={setScene} />
         <TextField title="消息内容" prompt="填写点选后要插入的文字" axis="vertical" lineLimit={{ min: 4, max: 8 }} value={text} onChanged={setText} />
         <TextField title="答案（可选）" prompt="脑筋急转弯的答案" axis="vertical" lineLimit={{ min: 2, max: 4 }} value={answer} onChanged={setAnswer} />
       </Section>
@@ -65,8 +67,8 @@ function MessageSettings({ store, initialLibrary }: { store: MessageStore; initi
   }
 
   async function openEditor(message?: QuickMessage) {
-    await Navigation.present({ element: <MessageEditor categoryTitle={category.title} message={message} onSave={async (text, answer) => {
-      await persist({ type: "message.save", categoryId: category.id, id: message?.id, text, answer })
+    await Navigation.present({ element: <MessageEditor categoryTitle={category.title} message={message} onSave={async (text, answer, scene) => {
+      await persist({ type: "message.save", categoryId: category.id, id: message?.id, text, answer, scene })
     }} />, modalPresentationStyle: "pageSheet" })
   }
 

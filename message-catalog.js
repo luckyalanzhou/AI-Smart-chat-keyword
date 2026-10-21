@@ -1,4 +1,4 @@
-export const CATALOG_VERSION = 2
+export const CATALOG_VERSION = 3
 
 const rows = [
   ["valorant", "无畏契约回怼", [
@@ -545,11 +545,20 @@ const extra = {
   ],
 }
 
+const valorantScenes = new Map([
+  ["补枪协同", [1, 2, 10, 11, 15, 28, ...Array.from({ length: 15 }, (_, i) => i + 30), 49, 66, 73, 74, 97, 99, 100, 109, 110]],
+  ["报点信息", [7, 17, 21, 26, 27, 42, 48, 51, 69, 70, ...Array.from({ length: 9 }, (_, i) => i + 75), 98, 101, 102, 106]],
+  ["残局沟通", [5, ...Array.from({ length: 12 }, (_, i) => i + 53)]],
+  ["经济与战术", Array.from({ length: 8 }, (_, i) => i + 45)],
+])
+const sceneByValorantIndex = new Map([...valorantScenes].flatMap(([scene, indexes]) => indexes.map((index) => [index, scene])))
+
 export const BUILTIN_CATALOG = rows.map(([id, title, entries]) => ({
   id, title, enabled: true,
   messages: [...entries, ...(extra[id] || [])].map((entry, index) => ({
     id: `${id}-${index + 1}`,
     text: Array.isArray(entry) ? entry[0] : entry,
+    ...(id === "valorant" ? { scene: sceneByValorantIndex.get(index + 1) || "复盘与态度" } : {}),
     ...(Array.isArray(entry) ? { answer: entry[1] } : {}),
   })),
 }))

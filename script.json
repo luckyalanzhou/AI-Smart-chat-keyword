@@ -4,7 +4,7 @@
   "remoteResource" : null,
   "permissions" : null,
   "entry" : "index.tsx",
-  "version" : "2.0.0",
+  "version" : "2.1.0",
   "icon" : "text.bubble.fill",
   "localizedDescriptions" : {
     "zh" : "无畏契约回怼、笑话、脑筋急转弯等离线快捷消息，点选即可填入聊天输入框。"
