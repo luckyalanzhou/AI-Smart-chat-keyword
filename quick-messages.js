@@ -143,9 +143,13 @@ export function drawNextMessage(messages, state = {}, random = Math.random) {
 }
 
 export function canReplaceInsertedMessage(previous, context) {
-  return Boolean(previous && previous.text && context
-    && typeof context.before === "string" && context.before.endsWith(previous.text)
+  const before = previous?.before
+  const visibleTailLength = typeof before === "string" ? Math.min(before.length, previous.text?.length || 0) : 0
+  return Boolean(previous?.text && visibleTailLength > 0 && context
+    && typeof context.before === "string" && context.before === before
+    && context.before.endsWith(previous.text.slice(-visibleTailLength))
     && context.after === previous.after
+    && typeof previous.allText === "string" && context.allText === previous.allText
     && !context.selected)
 }
 

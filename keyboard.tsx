@@ -4,7 +4,7 @@ import { openLocalMessageStore } from "./message-store.js"
 import type { DatabasePage, MessageStore } from "./message-store.js"
 import type { QuickMessage } from "./quick-messages.js"
 
-type InsertedMessage = { message: QuickMessage; after: string | null }
+type InsertedMessage = { message: QuickMessage; before: string | null; after: string | null; allText: string | null }
 type MessageCandidate = { message: QuickMessage; categoryId: string; warning?: string }
 type SceneOption = { id: string; title: string; count: number }
 
@@ -16,6 +16,7 @@ function inputContext() {
       before: CustomKeyboard.textBeforeCursor,
       after: CustomKeyboard.textAfterCursor,
       selected: CustomKeyboard.selectedText,
+      allText: CustomKeyboard.allText,
     }
   } catch {
     return null
@@ -47,7 +48,13 @@ function QuickMessageKeyboard({ store, initialPage, initialScenes }: { store: Me
     try {
       CustomKeyboard.insertText(item.message.text)
       setPreviousMessage(null)
-      setLastInserted({ message: item.message, after: context?.after ?? null })
+      const insertedContext = inputContext()
+      setLastInserted({
+        message: item.message,
+        before: insertedContext?.before ?? null,
+        after: insertedContext?.after ?? null,
+        allText: insertedContext?.allText ?? null,
+      })
       setCurrentMessage(item.message)
       setShowAnswer(false)
       setCandidate(null)
@@ -68,7 +75,7 @@ function QuickMessageKeyboard({ store, initialPage, initialScenes }: { store: Me
     }
     const context = inputContext()
     const units = graphemes(lastInserted.message.text)
-    if (!canReplaceInsertedMessage({ text: lastInserted.message.text, after: lastInserted.after }, context) || !units) {
+    if (!canReplaceInsertedMessage({ ...lastInserted, text: lastInserted.message.text }, context) || !units) {
       setCandidate({ ...item, warning: "无法确认上次句子的位置，因此不会自动替换。填入会按当前光标或选区执行。" })
       setNotice("输入位置已变化；确认后会在光标处填入")
       return
@@ -76,8 +83,14 @@ function QuickMessageKeyboard({ store, initialPage, initialScenes }: { store: Me
     try {
       for (let index = 0; index < units.length; index++) CustomKeyboard.deleteBackward()
       CustomKeyboard.insertText(item.message.text)
+      const insertedContext = inputContext()
       setPreviousMessage(lastInserted.message)
-      setLastInserted({ message: item.message, after: lastInserted.after })
+      setLastInserted({
+        message: item.message,
+        before: insertedContext?.before ?? null,
+        after: insertedContext?.after ?? null,
+        allText: insertedContext?.allText ?? null,
+      })
       setCurrentMessage(item.message)
       setShowAnswer(false)
       setCandidate(null)

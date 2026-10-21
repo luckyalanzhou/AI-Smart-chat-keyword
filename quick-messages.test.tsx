@@ -156,12 +156,21 @@ test("shuffle bags do not repeat before exhausting a scene and avoid a cycle-bou
 })
 
 test("replacement requires a matching suffix, unchanged following context and no selection", () => {
-  const previous = { text: "原来的句子", after: " 草稿尾部" }
-  assert.equal(canReplaceInsertedMessage(previous, { before: "前缀原来的句子", after: " 草稿尾部", selected: "" }), true)
-  assert.equal(canReplaceInsertedMessage(previous, { before: "原来的句子已修改", after: " 草稿尾部", selected: "" }), false)
-  assert.equal(canReplaceInsertedMessage(previous, { before: "原来的句子", after: "别的内容", selected: "" }), false)
-  assert.equal(canReplaceInsertedMessage(previous, { before: "原来的句子", after: " 草稿尾部", selected: "选中" }), false)
-  assert.equal(canReplaceInsertedMessage(previous, { before: null, after: " 草稿尾部" }), false)
-  assert.equal(canReplaceInsertedMessage({ text: "上一句", after: null }, { before: "上一句", after: null, selected: null }), true)
-  assert.equal(canReplaceInsertedMessage({ text: "上一句", after: null }, { before: "上一句", after: "新增尾部", selected: null }), false)
+  const previous = { text: "原来的句子", before: "前缀原来的句子", after: " 草稿尾部", allText: "前缀原来的句子 草稿尾部" }
+  assert.equal(canReplaceInsertedMessage(previous, { before: previous.before, after: previous.after, allText: previous.allText, selected: "" }), true)
+  assert.equal(canReplaceInsertedMessage(previous, { before: "原来的句子已修改", after: previous.after, allText: "原来的句子已修改 草稿尾部", selected: "" }), false)
+  assert.equal(canReplaceInsertedMessage(previous, { before: previous.before, after: "别的内容", allText: previous.allText, selected: "" }), false)
+  assert.equal(canReplaceInsertedMessage(previous, { before: previous.before, after: previous.after, allText: previous.allText, selected: "选中" }), false)
+  assert.equal(canReplaceInsertedMessage(previous, { before: null, after: previous.after, allText: previous.allText }), false)
+  const atEnd = { text: "上一句", before: "上一句", after: null, allText: "上一句" }
+  assert.equal(canReplaceInsertedMessage(atEnd, { before: atEnd.before, after: null, allText: atEnd.allText, selected: null }), true)
+  assert.equal(canReplaceInsertedMessage(atEnd, { before: atEnd.before, after: "新增尾部", allText: "上一句新增尾部", selected: null }), false)
+})
+
+test("a long inserted message remains replaceable when the host returns a truncated cursor context", () => {
+  const text = "前缀".repeat(30) + "这是一条很长的快捷回复，输入代理只返回光标前的一小段上下文。"
+  const allText = `聊天原文${text}`
+  const before = allText.slice(-40)
+  const snapshot = { text, before, after: "", allText }
+  assert.equal(canReplaceInsertedMessage(snapshot, { before, after: "", allText, selected: null }), true)
 })

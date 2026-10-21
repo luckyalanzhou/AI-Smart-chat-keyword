@@ -18,4 +18,4 @@ export function loadLibrary(value: unknown): MessageLibrary
 export function editLibrary(library: MessageLibrary, change: LibraryChange): MessageLibrary
 export function getMessagePage(library: MessageLibrary, categoryId?: string, pageIndex?: number): MessagePage
 export function drawNextMessage(messages: QuickMessage[], state?: { remaining?: string[]; lastId?: string }, random?: () => number): { message: QuickMessage | null; state: { remaining: string[]; lastId: string } }
-export function canReplaceInsertedMessage(previous: { text: string; after: string | null } | null, context: { before: string | null; after: string | null; selected?: string | null } | null): boolean
+export function canReplaceInsertedMessage(previous: { text: string; before: string | null; after: string | null; allText: string | null } | null, context: { before: string | null; after: string | null; allText: string | null; selected?: string | null } | null): boolean

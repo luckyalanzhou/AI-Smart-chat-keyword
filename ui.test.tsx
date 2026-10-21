@@ -17,7 +17,7 @@ async function launch(file, initial = loadLibrary(null), db = createDatabase()) 
   databases.add(db)
   const store = await openMessageStore(db, initial)
   const values = new Map([[LIBRARY_STORAGE_KEY, JSON.parse(JSON.stringify(initial))], ["unrelated.setting", { value: "keep" }]])
-  const host = { values, screens: [], inserted: [], clicks: 0, heights: [], presentations: 0, before: "", after: null, selected: null, failWrite: false, failInsert: false, failDelete: false, failSound: false, confirm: true, prompt: null }
+  const host = { values, screens: [], inserted: [], clicks: 0, heights: [], presentations: 0, before: "", after: null, selected: null, contextLimit: Infinity, failWrite: false, failInsert: false, failDelete: false, failSound: false, confirm: true, prompt: null }
   host.store = store
   host.db = db
   Object.defineProperty(host, "failWrite", { get: () => db.failWrite, set: (value) => { db.failWrite = value } })
@@ -64,9 +64,10 @@ async function launch(file, initial = loadLibrary(null), db = createDatabase()) 
     CustomKeyboard: {
       requestHeight(height) { host.heights.push(height) },
       present(element) { host.presentations++; screen(element) },
-      get textBeforeCursor() { return host.before },
+      get textBeforeCursor() { return host.before.slice(-host.contextLimit) },
       get textAfterCursor() { return host.after },
       get selectedText() { return host.selected },
+      get allText() { return host.before + (host.selected || "") + (host.after || "") },
       insertText(text) {
         if (host.failInsert) throw new Error("No input")
         host.inserted.push(text)
@@ -140,6 +141,24 @@ test("category capsules insert a random phrase and repeat taps replace it with n
   assert.match(label(host.root.render()), /已换句/)
   button(host.root, "完成").props.action()
   assert.equal(host.keyboardDismissed, true)
+})
+
+test("a long phrase is replaced when the host truncates before-cursor context", async () => {
+  const library = loadLibrary(null)
+  const text = "计划里的那颗闪，最好也能出现在现场。这波配合的距离，比包点之间还远。人没到齐先别开团，复盘倒不用这么着急集合。"
+  library.categories[0].messages = [{ id: "long-reply", text }]
+  const host = await launch("keyboard.tsx", library)
+  host.contextLimit = 40
+  host.db.raw.exec("DELETE FROM messages WHERE category_id = 'valorant' AND id <> 'long-reply'")
+  const category = library.categories[0]
+  button(host.root, category.title).props.action()
+  await settle()
+  assert.equal(host.before, text)
+  button(host.root, category.title).props.action()
+  await settle()
+  assert.equal(host.inserted.length, 2)
+  assert.equal(host.before, text)
+  assert.doesNotMatch(label(host.root.render()), /无法确认上次句子的位置/)
 })
 
 test("VALORANT scene capsules limit the random draw to the selected scene", async () => {
