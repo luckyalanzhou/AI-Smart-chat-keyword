@@ -1,19 +1,19 @@
 {
   "runInApp" : true,
-  "color" : "#7C5CFC",
+  "color" : "#007AFF",
   "remoteResource" : null,
   "permissions" : null,
   "entry" : "index.tsx",
-  "version" : "1.0.0",
-  "icon" : "person.wave.2.fill",
+  "version" : "2.0.0",
+  "icon" : "text.bubble.fill",
   "localizedDescriptions" : {
-    "zh" : "根据对话内容、沟通习惯、表达风格和关系语境生成回复，点选即可插入。"
+    "zh" : "无畏契约回怼、笑话、脑筋急转弯等离线快捷消息，点选即可填入聊天输入框。"
   },
   "author" : "luckyalanzhou",
-  "description" : "A privacy-friendly smart reply custom keyboard.",
+  "description" : "An offline quick-message keyboard with editable categories and snippets.",
   "iconImage" : null,
   "localizedNames" : {
-    "zh" : "智能聊天键盘"
+    "zh" : "快捷消息"
   },
   "contributors" : [
 
@@ -21,5 +21,5 @@
   "intentInputTypes" : [
 
   ],
-  "name" : "智能聊天键盘"
+  "name" : "快捷消息"
 }

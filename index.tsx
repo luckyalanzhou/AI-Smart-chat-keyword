@@ -1,548 +1,154 @@
-import { Navigation, NavigationStack, Form, Section, HStack, Spacer, Text, TextField, SecureField, Button, Picker, modifiers, useState, useEffect, useCallback, useMemo, fetch, Script } from "scripting"
-import type { ChatGPTCredential, ChatGPTModel } from "./chatgpt-auth.js"
-import { buildAuthorizationURL, createCredentialRecord, createPKCE, createRandomValue, createUUID, parseLoopbackAuthorizationRequest, parseModelCatalog, refreshCredentialWithLatest, revokeCredential, verifyIdentityToken, withRefreshLease } from "./chatgpt-auth.js"
-import { getReasoningEffortChoices } from "./reasoning.js"
-import type { ReplyProfile } from "./reply-profile.js"
-import { defaultReplyProfile, moods, communicationStyles, expressionStyles, relationshipContexts, normalizeReplyProfile } from "./reply-profile.js"
-type Gender = ReplyProfile["gender"]
-type Profile = ReplyProfile
-const defaultProfile: Profile = defaultReplyProfile
-type AIProvider = "OpenAI" | "DeepSeek" | "通义千问" | "智谱AI" | "月之暗面" | "Google Gemini" | "自定义兼容接口"
-type AIConfig = { provider: AIProvider; endpoint: string; model: string; apiKey: string; reasoningEffort?: string }
-type AIAuthMode = "apiKey" | "chatgptPlan"
-type ChatGPTAccount = { clientId: string; subject: string; email: string; scopes: string[] }
-type AIProviderPreferences = Partial<Record<AIProvider, { endpoint: string; model: string }>>
-const providerDefaults: Record<AIProvider, { endpoint: string; model: string }> = {
-  "OpenAI": { endpoint: "https://api.openai.com/v1/chat/completions", model: "gpt-4o-mini" },
-  "DeepSeek": { endpoint: "https://api.deepseek.com/chat/completions", model: "deepseek-v4-flash" },
-  "通义千问": { endpoint: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions", model: "qwen-turbo" },
-  "智谱AI": { endpoint: "https://open.bigmodel.cn/api/paas/v4/chat/completions", model: "glm-4-flash" },
-  "月之暗面": { endpoint: "https://api.moonshot.cn/v1/chat/completions", model: "moonshot-v1-8k" },
-  "Google Gemini": { endpoint: "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent", model: "gemini-3.8-flash" },
-  "自定义兼容接口": { endpoint: "https://api.openai.com/v1/chat/completions", model: "" }
-}
-const defaultAI: AIConfig = { provider: "OpenAI", ...providerDefaults.OpenAI, apiKey: "", reasoningEffort: "auto" }
-const normalizeAI = (config: AIConfig): AIConfig => config.provider === "DeepSeek" && ["deepseek-chat", "deepseek-reasoner"].includes(config.model)
-  ? { ...config, model: "deepseek-v4-flash" }
-  : config.provider === "Google Gemini" && config.model === "gemini-2.0-flash"
-    ? { ...config, model: "gemini-3.8-flash" }
-    : config
-let modelRequestId = 0
-let modelRequest: AbortController | null = null
-let chatGPTModelRequestId = 0
-let chatGPTModelRequest: AbortController | null = null
+import { Button, Form, HStack, Navigation, NavigationStack, Picker, Script, Section, Spacer, Text, TextField, Toggle, VStack, modifiers, useState } from "scripting"
+import { openLocalMessageStore } from "./message-store.js"
+import type { MessageStore } from "./message-store.js"
+import type { LibraryChange, MessageLibrary, QuickMessage } from "./quick-messages.js"
 
-const CHATGPT_CREDENTIAL_KEY = "ai-smart-chat-keyword.chatgpt.credentials.v1"
-const CHATGPT_REFRESH_LOCK_KEY = "ai-smart-chat-keyword.chatgpt.refresh-lock.v1"
-const CHATGPT_HOST_ID_KEY = "ai-smart-chat-keyword.chatgpt.hostId"
-const CHATGPT_MODEL_KEY = "ai-smart-chat-keyword.chatgpt.model"
-const CHATGPT_MODE_KEY = "ai-smart-chat-keyword.chatgpt.authMode"
-const CHATGPT_NOTICE_KEY = "ai-smart-chat-keyword.chatgpt.planNoticeAcknowledged"
-const CHATGPT_CALLBACK_PATH = "/auth/callback"
-
-function readChatGPTCredential(): ChatGPTCredential | null {
-  try {
-    const value = Keychain.get(CHATGPT_CREDENTIAL_KEY)
-    if (!value) return null
-    const parsed = JSON.parse(value)
-    return parsed && parsed.version === 1
-      && typeof parsed.clientId === "string" && parsed.clientId
-      && typeof parsed.hostId === "string" && parsed.hostId
-      && typeof parsed.subject === "string" && parsed.subject
-      && typeof parsed.idToken === "string" && parsed.idToken
-      && typeof parsed.accessToken === "string" && parsed.accessToken
-      && typeof parsed.refreshToken === "string" && parsed.refreshToken
-      && Array.isArray(parsed.scopes) && Number.isFinite(parsed.expiresAt)
-      ? parsed as ChatGPTCredential : null
-  } catch { return null }
-}
-
-function saveChatGPTCredential(credential: ChatGPTCredential) {
-  if (!Keychain.set(CHATGPT_CREDENTIAL_KEY, JSON.stringify(credential))) throw new Error("无法将 ChatGPT 授权安全保存到系统钥匙串")
-}
-
-type ChatGPTRefreshLease = { owner: string; expiresAt: number }
-function readChatGPTRefreshLease(key: string): ChatGPTRefreshLease | null {
-  try {
-    const value = Keychain.get(key)
-    const parsed = value ? JSON.parse(value) : null
-    return parsed && typeof parsed.owner === "string" && Number.isFinite(parsed.expiresAt) ? parsed as ChatGPTRefreshLease : null
-  } catch { return null }
-}
-function writeChatGPTRefreshLease(key: string, lease: ChatGPTRefreshLease | null) {
-  return lease ? Keychain.set(key, JSON.stringify(lease)) : Keychain.remove(key)
-}
-function withChatGPTRefreshLease<T>(credential: ChatGPTCredential, operation: () => Promise<T>) {
-  const key = `${CHATGPT_REFRESH_LOCK_KEY}.${credential.clientId}`
-  return withRefreshLease(
-    createRandomValue(crypto, 16),
-    () => readChatGPTRefreshLease(key),
-    (lease) => writeChatGPTRefreshLease(key, lease),
-    operation,
-  )
-}
-
-function readChatGPTAccount(): ChatGPTAccount | null {
-  const credential = readChatGPTCredential()
-  return credential ? { clientId: credential.clientId, subject: credential.subject, email: credential.email, scopes: credential.scopes } : null
-}
-
-function authPage(message: string) {
-  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>智能聊天键盘</title></head><body><main style="font:17px -apple-system;padding:32px;text-align:center">${message}<p>查看上方状态后，关闭此页面返回脚本。</p></main></body></html>`
-}
-
-function authorizationHttpResponse(statusCode: number, message: string) {
-  const runtime = globalThis as any
-  const body = runtime.HttpResponseBody.html(authPage(message))
-  return statusCode === 400 ? runtime.HttpResponse.badRequest(body) : runtime.HttpResponse.ok(body)
-}
-
-async function receiveAuthorizationCode(clientId: string, hostId: string, idTokenHint: string, loginHint: string) {
-  const pkce = await createPKCE(crypto)
-  const state = createRandomValue(crypto)
-  const nonce = createRandomValue(crypto)
-  const runtime = globalThis as any
-  if (typeof runtime.HttpServer !== "function" || typeof runtime.HttpResponse?.ok !== "function" || typeof runtime.HttpResponse?.badRequest !== "function" || typeof runtime.HttpResponseBody?.html !== "function" || typeof Safari.present !== "function") {
-    throw new Error("当前 Scripting 环境不支持应用内授权页面或本地回调服务。请更新 Scripting，并从主 App 中运行脚本。")
-  }
-  let settle: ((value: { code: string; clientId: string }) => void) | null = null
-  let fail: ((error: Error) => void) | null = null
-  let settled = false
-  let timeout: ReturnType<typeof setTimeout> | null = null
-  const callback = new Promise<{ code: string; clientId: string }>((resolve, reject) => { settle = resolve; fail = reject })
-  void callback.catch(() => {})
-  const server = new runtime.HttpServer()
-  server.registerAsyncHandler(CHATGPT_CALLBACK_PATH, async (request: any) => {
-    if (request.method !== "GET") return authorizationHttpResponse(400, "授权回调请求格式无效。")
-    if (settled) return authorizationHttpResponse(400, "此授权请求已结束。")
-    let query: Record<string, string>
-    try {
-      const port = server.port
-      if (typeof port !== "number" || !Number.isInteger(port) || port < 1) throw new Error("本地授权回调没有监听端口")
-      query = parseLoopbackAuthorizationRequest(`GET ${request.target} HTTP/1.1`, request.address || null, port, server.listenAddressIPv4 || null)
-    } catch (error) {
-      // Parser errors contain only fixed validation messages; never echo the
-      // request target or query values, which may include an authorization code.
-      const reason = error instanceof Error ? error.message : "请求格式无效"
-      return authorizationHttpResponse(400, `授权回调无效：${reason}。请返回设置后重试。`)
-    }
-    if (query.state !== state) return authorizationHttpResponse(400, "授权响应无法验证，请返回设置后重试。")
-    if (query.error) {
-      settled = true
-      fail?.(new Error(query.error === "access_denied" ? "你取消了 ChatGPT 授权" : "ChatGPT 授权未能完成"))
-      return authorizationHttpResponse(200, "授权未完成。")
-    }
-    const returnedClientId = query.client_id || ""
-    if (clientId === "dynamic_agent_client" && (!returnedClientId || returnedClientId === "dynamic_agent_client")) {
-      settled = true
-      fail?.(new Error("ChatGPT 没有返回新注册的客户端标识，请重新开始登录"))
-      return authorizationHttpResponse(200, "授权信息不完整。")
-    }
-    if (clientId !== "dynamic_agent_client" && returnedClientId && returnedClientId !== clientId) {
-      settled = true
-      fail?.(new Error("ChatGPT 返回的账号注册与当前选择不一致"))
-      return authorizationHttpResponse(200, "授权账号与当前选择不一致。")
-    }
-    if (!query.code) {
-      settled = true
-      fail?.(new Error("ChatGPT 回调没有包含授权码"))
-      return authorizationHttpResponse(200, "授权信息不完整。")
-    }
-    settled = true
-    settle?.({ code: query.code, clientId: clientId === "dynamic_agent_client" ? returnedClientId : clientId })
-    return authorizationHttpResponse(200, "ChatGPT 授权已返回。")
-  })
-
-  try {
-    // Bind only to the IPv4 loopback interface so the temporary OAuth listener
-    // cannot receive callback requests from other devices on the local network.
-    server.listenAddressIPv4 = "127.0.0.1"
-    const startError = server.start({ port: 0, forceIPv4: true })
-    if (startError) throw new Error(`无法启动本地授权回调服务：${startError}`)
-    if (server.listenAddressIPv4 !== "127.0.0.1") throw new Error("Scripting 未能将授权回调限制在本机 loopback 地址")
-    const port = server.port
-    if (typeof port !== "number" || !Number.isInteger(port) || port < 1) throw new Error("Scripting 未返回本地授权回调端口")
-    const redirectUri = `http://127.0.0.1:${port}${CHATGPT_CALLBACK_PATH}`
-    const authorizationURL = buildAuthorizationURL({
-      clientId,
-      hostId,
-      agentName: "智能聊天键盘",
-      redirectUri,
-      state,
-      nonce,
-      codeChallenge: pkce.challenge,
-      idTokenHint: idTokenHint || undefined,
-      loginHint: loginHint || undefined,
-    })
-    timeout = setTimeout(() => {
-      if (!settled) {
-        settled = true
-        fail?.(new Error("等待 ChatGPT 授权超时；请返回设置后重试"))
-      }
-    }, 180_000)
-    await Safari.present(authorizationURL, true)
-    if (!settled) {
-      settled = true
-      fail?.(new Error("你关闭了 ChatGPT 登录页面，授权尚未完成"))
-    }
-    const result = await callback
-    return { ...result, redirectUri, verifier: pkce.verifier, nonce }
-  } finally {
-    if (timeout) clearTimeout(timeout)
-    if (server.state !== "stopped") server.stop()
-  }
-}
-
-async function completeChatGPTSignIn() {
-  const account = readChatGPTAccount()
-  let credential = readChatGPTCredential()
-  const savedHostId = Storage.get<string>(CHATGPT_HOST_ID_KEY, { shared: true })
-  const hostId = savedHostId || `urn:uuid:${createUUID(crypto)}`
-  if (!savedHostId) Storage.set(CHATGPT_HOST_ID_KEY, hostId, { shared: true })
-  const requestedClientId = account?.clientId || "dynamic_agent_client"
-  const authorization = await receiveAuthorizationCode(requestedClientId, hostId, credential?.idToken || "", account?.email || "")
-  const tokenResponse = await fetch("https://auth.openai.com/api/accounts/oauth/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
-    body: new URLSearchParams({
-      grant_type: "authorization_code",
-      code: authorization.code,
-      redirect_uri: authorization.redirectUri,
-      client_id: authorization.clientId,
-      code_verifier: authorization.verifier,
-      resource: "https://api.openai.com/v1",
-    }).toString(),
-    timeout: 25,
-  })
-  let tokenData: any = {}
-  try { tokenData = await tokenResponse.json() } catch { /* Use a safe status-only error below. */ }
-  if (!tokenResponse.ok) {
-    const code = tokenData?.error?.code || tokenData?.error || tokenData?.code
-    throw new Error(`ChatGPT 授权交换失败（HTTP ${tokenResponse.status}${code ? `，${String(code).slice(0, 60)}` : ""}）`)
-  }
-  if (typeof tokenData.id_token !== "string") throw new Error("ChatGPT 没有返回身份令牌，未保存任何授权信息")
-  const identity = await verifyIdentityToken(tokenData.id_token, authorization.nonce, authorization.clientId, fetch, crypto.subtle)
-  if (account?.clientId === authorization.clientId && account.subject && identity.sub !== account.subject) throw new Error("此次登录的 ChatGPT 身份与已保存账号不一致；原有登录状态未更改")
-  credential = createCredentialRecord(tokenData, identity, authorization.clientId, hostId)
-  saveChatGPTCredential(credential)
-  const nextAccount: ChatGPTAccount = {
-    clientId: credential.clientId,
-    subject: credential.subject,
-    email: credential.email,
-    scopes: credential.scopes,
-  }
-  Storage.set(CHATGPT_MODE_KEY, "chatgptPlan", { shared: true })
-  return nextAccount
-}
-
-const providers = Object.keys(providerDefaults) as AIProvider[]
-const clampAge = (value: string) => Math.max(1, Math.min(120, Number(value) || 25))
-const listModelsURL = (config: AIConfig) => config.provider === "Google Gemini"
-  ? "https://generativelanguage.googleapis.com/v1beta/models"
-  : config.endpoint.replace(/\/chat\/completions\/?$/, "/models")
-
-function App() {
+function MessageEditor({ categoryTitle, message, onSave }: { categoryTitle: string; message?: QuickMessage; onSave: (text: string, answer: string) => Promise<void> }) {
   const dismiss = Navigation.useDismiss()
-  const [profile, setProfile] = useState<Profile>(normalizeReplyProfile(Storage.get<Profile>("profile", { shared: true }) || defaultProfile))
-  const storedAI = Storage.get<AIConfig>("ai", { shared: true }) || defaultAI
-  const initialAI = normalizeAI(storedAI)
-  const storedAuthMode = Storage.get<AIAuthMode>(CHATGPT_MODE_KEY, { shared: true })
-  const [ai, setAI] = useState<AIConfig>(initialAI)
-  const [authMode, setAuthMode] = useState<AIAuthMode>(storedAuthMode === "chatgptPlan" ? "chatgptPlan" : "apiKey")
-  const [chatGPTAccount, setChatGPTAccount] = useState<ChatGPTAccount | null>(readChatGPTAccount())
-  const [chatGPTModels, setChatGPTModels] = useState<ChatGPTModel[]>([])
-  const [selectedChatGPTModel, setSelectedChatGPTModel] = useState<string>(Storage.get<string>(CHATGPT_MODEL_KEY, { shared: true }) || "")
-  const [chatGPTModelBusy, setChatGPTModelBusy] = useState(false)
-  const [chatGPTNotice, setChatGPTNotice] = useState("登录 ChatGPT 后读取该账号可用模型")
-  const [chatGPTBusy, setChatGPTBusy] = useState(false)
-  const [showKey, setShowKey] = useState(false)
-  const [showAdvanced, setShowAdvanced] = useState(initialAI.provider === "自定义兼容接口")
-  const [models, setModels] = useState<string[]>([])
-  const [modelBusy, setModelBusy] = useState(false)
-  const [modelNotice, setModelNotice] = useState("填写 API Key 后会自动读取可用模型")
-  const activeReasoningProvider = authMode === "chatgptPlan" ? "OpenAI" : ai.provider
-  const activeReasoningModel = authMode === "chatgptPlan" ? selectedChatGPTModel : ai.model
-  const reasoningChoices = getReasoningEffortChoices(activeReasoningProvider, activeReasoningModel)
-  const canTuneReasoning = reasoningChoices.length > 1
-  const selectedReasoningEffort = reasoningChoices.some(({ value }) => value === ai.reasoningEffort) ? ai.reasoningEffort! : "auto"
-  useEffect(() => { if (initialAI.model !== storedAI.model) Storage.set("ai", initialAI, { shared: true }) }, [])
-  const saveProfile = useCallback((next: Profile) => {
-    const normalized = normalizeReplyProfile(next)
-    setProfile(normalized)
-    Storage.set("profile", normalized, { shared: true })
-  }, [])
-  const saveAI = useCallback((next: AIConfig) => {
-    // Any configuration edit invalidates an in-flight model request. Otherwise
-    // a response based on an older key/endpoint could write that stale config
-    // back when it selects the first available model.
-    modelRequestId++
-    modelRequest?.abort()
-    modelRequest = null
-    setModelBusy(false)
-    setAI(next)
-    Storage.set("ai", next, { shared: true })
-    const providerPreferences = Storage.get<AIProviderPreferences>("aiProviderPreferences", { shared: true }) || {}
-    providerPreferences[next.provider] = { endpoint: next.endpoint, model: next.model }
-    Storage.set("aiProviderPreferences", providerPreferences, { shared: true })
-  }, [])
-  const refreshModels = useCallback(async () => {
-    const requestId = ++modelRequestId
-    modelRequest?.abort()
-    const controller = new AbortController()
-    modelRequest = controller
-    // Read the just-saved shared config so a provider switch never uses the
-    // previous provider's endpoint or model while the state update is pending.
-    const config = Storage.get<AIConfig>("ai", { shared: true }) || ai
-    if (!config.apiKey.trim()) { setModelBusy(false); setModelNotice("请先填写 API Key"); return }
-    setModelBusy(true)
-    setModelNotice("正在读取最新模型…")
+  const [text, setText] = useState(message?.text || "")
+  const [answer, setAnswer] = useState(message?.answer || "")
+  const [saving, setSaving] = useState(false)
+  const [notice, setNotice] = useState("点选消息只填入正文，答案可在键盘中单独查看。")
+  async function save() {
+    if (saving) return
+    setSaving(true)
     try {
-      const gemini = config.provider === "Google Gemini"
-      const url = listModelsURL(config)
-      const response = await fetch(url, { signal: controller.signal, headers: gemini ? { "x-goog-api-key": config.apiKey.trim() } : { Authorization: `Bearer ${config.apiKey.trim()}` } })
-      const data = await response.json()
-      if (!response.ok) throw new Error(data?.error?.message || `HTTP ${response.status}`)
-      const values = gemini
-        ? (Array.isArray(data?.models) ? data.models.filter((m: any) => Array.isArray(m?.supportedGenerationMethods) && m.supportedGenerationMethods.includes("generateContent")).map((m: any) => String(m.name || "").replace(/^models\//, "")).filter((m: string) => m) : [])
-        : (Array.isArray(data?.data) ? data.data.map((m: any) => String(m.id || "")).filter((m: string) => m) : [])
-      if (!values.length) throw new Error("没有读取到模型")
-      if (requestId !== modelRequestId) return
-      setModels(values)
-      // Use the current config. The request may have been started with an
-      // older snapshot, and must never restore an old key or endpoint.
-      const latest = Storage.get<AIConfig>("ai", { shared: true }) || ai
-      if (latest.provider !== config.provider || latest.endpoint !== config.endpoint || latest.apiKey !== config.apiKey) return
-      if (!values.includes(latest.model)) saveAI({ ...latest, model: values[0] })
-      setModelNotice(`已读取 ${values.length} 个可用模型`)
+      await onSave(text, answer)
+      dismiss()
     } catch (error) {
-      if (requestId !== modelRequestId || (error as any)?.name === "AbortError") return
-      setModels([])
-      setModelNotice(`读取失败：${String(error).replace("Error: ", "")}`)
+      setNotice(error instanceof Error ? error.message : "保存失败，请重试")
     } finally {
-      if (requestId === modelRequestId) setModelBusy(false)
+      setSaving(false)
     }
-  }, [ai, saveAI])
-  const changeProvider = useCallback((provider: AIProvider) => {
-    modelRequestId++
-    modelRequest?.abort()
-    modelRequest = null
-    setModels([])
-    setModelNotice("正在准备读取模型…")
-    setShowAdvanced(provider === "自定义兼容接口")
-    const storedKeys = Storage.get<Record<AIProvider, string>>("aiKeys", { shared: true }) || {} as Record<AIProvider, string>
-    const providerPreferences = Storage.get<AIProviderPreferences>("aiProviderPreferences", { shared: true }) || {}
-    storedKeys[ai.provider] = ai.apiKey
-    providerPreferences[ai.provider] = { endpoint: ai.endpoint, model: ai.model }
-    const next = { ...ai, provider, ...(providerPreferences[provider] || providerDefaults[provider]), apiKey: storedKeys[provider] || "" }
-    storedKeys[provider] = next.apiKey
-    Storage.set("aiKeys", storedKeys, { shared: true })
-    Storage.set("aiProviderPreferences", providerPreferences, { shared: true })
-    saveAI(next)
-  }, [ai, saveAI])
-  const changeAuthMode = useCallback((mode: AIAuthMode) => {
-    if (mode !== "apiKey") {
-      modelRequestId++
-      modelRequest?.abort()
-      modelRequest = null
+  }
+  return <NavigationStack>
+    <Form formStyle="grouped" navigationTitle={message ? "编辑消息" : "新增消息"} navigationBarTitleDisplayMode="inline" toolbar={{
+      topBarLeading: <Button title="取消" disabled={saving} action={dismiss} />,
+      topBarTrailing: <Button title={saving ? "保存中…" : "保存"} disabled={saving || !text.trim()} action={() => { void save() }} />,
+    }}>
+      <Section header={<Text>{categoryTitle}</Text>} footer={<Text>{notice}</Text>}>
+        <TextField title="消息内容" prompt="填写点选后要插入的文字" axis="vertical" lineLimit={{ min: 4, max: 8 }} value={text} onChanged={setText} />
+        <TextField title="答案（可选）" prompt="脑筋急转弯的答案" axis="vertical" lineLimit={{ min: 2, max: 4 }} value={answer} onChanged={setAnswer} />
+      </Section>
+    </Form>
+  </NavigationStack>
+}
+
+function MessageSettings({ store, initialLibrary }: { store: MessageStore; initialLibrary: MessageLibrary }) {
+  const dismiss = Navigation.useDismiss()
+  const [library, setLibrary] = useState<MessageLibrary>(initialLibrary)
+  const [selectedId, setSelectedId] = useState(library.defaultCategoryId)
+  const [notice, setNotice] = useState("点选消息可编辑，设置会在重新打开键盘后生效。")
+  const [search, setSearch] = useState("")
+  const [pageIndex, setPageIndex] = useState(0)
+  const category = library.categories.find((item) => item.id === selectedId) || library.categories[0]
+  const defaultOptions = library.categories.filter((item) => item.enabled && item.messages.length > 0)
+  const query = search.trim().toLowerCase()
+  const messages = category.messages.filter((message) => `${message.text}\n${message.answer || ""}`.toLowerCase().includes(query))
+  const pageCount = Math.max(1, Math.ceil(messages.length / 20))
+  const currentPage = Math.min(pageIndex, pageCount - 1)
+  const visibleMessages = messages.slice(currentPage * 20, (currentPage + 1) * 20)
+
+  async function persist(change: LibraryChange): Promise<MessageLibrary> {
+    const next = await store.change(change)
+    setLibrary(next)
+    setNotice("已保存，重新打开键盘即可使用。")
+    return next
+  }
+
+  async function commit(change: LibraryChange): Promise<MessageLibrary | null> {
+    try { return await persist(change) }
+    catch (error) {
+      setNotice(error instanceof Error ? error.message : "保存失败，请重试")
+      return null
     }
-    if (mode !== "chatgptPlan") {
-      chatGPTModelRequestId++
-      chatGPTModelRequest?.abort()
-      chatGPTModelRequest = null
-    }
-    setAuthMode(mode)
-    Storage.set(CHATGPT_MODE_KEY, mode, { shared: true })
-    if (mode === "chatgptPlan" && !readChatGPTCredential()) setChatGPTNotice("请先使用 ChatGPT 账号授权")
-  }, [])
-  const refreshChatGPTModels = useCallback(async () => {
-    const requestId = ++chatGPTModelRequestId
-    chatGPTModelRequest?.abort()
-    const controller = new AbortController()
-    chatGPTModelRequest = controller
-    let credential = readChatGPTCredential()
-    if (!credential) { setChatGPTModels([]); setChatGPTModelBusy(false); setChatGPTNotice("请先使用 ChatGPT 账号授权"); return }
-    if (!credential.scopes?.includes("chatgpt.tokens.use.direct")) { setChatGPTModels([]); setChatGPTModelBusy(false); setChatGPTNotice("当前授权未允许使用 ChatGPT 计划，请重新登录授权"); return }
-    setChatGPTModelBusy(true)
-    setChatGPTNotice("正在读取该账号可用模型…")
-    try {
-      credential = await refreshCredentialWithLatest(credential, fetch, readChatGPTCredential, saveChatGPTCredential, Date.now(), (operation) => withChatGPTRefreshLease(credential!, operation))
-      const response = await fetch("https://api.openai.com/v1/models", {
-        signal: controller.signal,
-        timeout: 20,
-        headers: { Authorization: `Bearer ${credential.accessToken}` },
-      })
-      let payload: any = {}
-      try { payload = await response.json() } catch { /* Use a safe HTTP status below. */ }
-      if (!response.ok) throw new Error(payload?.error?.message || payload?.detail || `HTTP ${response.status}`)
-      const values = parseModelCatalog(payload)
-      if (!values.length) throw new Error("该账号暂时没有可选择的模型")
-      if (requestId !== chatGPTModelRequestId) return
-      const currentCredential = readChatGPTCredential()
-      if (!currentCredential || currentCredential.clientId !== credential.clientId || currentCredential.subject !== credential.subject) return
-      setChatGPTModels(values)
-      const storedModel = Storage.get<string>(CHATGPT_MODEL_KEY, { shared: true }) || ""
-      const selectedModel = values.some((model) => model.slug === storedModel) ? storedModel : values[0].slug
-      setSelectedChatGPTModel(selectedModel)
-      if (selectedModel !== storedModel) Storage.set(CHATGPT_MODEL_KEY, selectedModel, { shared: true })
-      setChatGPTNotice(`已读取 ${values.length} 个账号可用模型`)
-    } catch (error) {
-      if (requestId !== chatGPTModelRequestId || (error as any)?.name === "AbortError") return
-      if ((error as any)?.requiresSignIn) {
-        const currentCredential = readChatGPTCredential()
-        if ((error as any)?.invalidCredential && currentCredential?.refreshToken === credential.refreshToken) Keychain.remove(CHATGPT_CREDENTIAL_KEY)
-        setChatGPTAccount(readChatGPTAccount())
-        setChatGPTModels([])
-      }
-      setChatGPTNotice((error as any)?.credentialChanged ? "ChatGPT 登录状态刚刚改变，请重新读取模型" : (error as any)?.requiresSignIn ? "ChatGPT 登录已失效，请重新授权" : `读取 ChatGPT 模型失败：${String(error).replace("Error: ", "")}`)
-    } finally {
-      if (requestId === chatGPTModelRequestId) setChatGPTModelBusy(false)
-    }
-  }, [])
-  const loginChatGPT = useCallback(async () => {
-    if (chatGPTBusy) return
-    setChatGPTBusy(true)
-    setChatGPTNotice("正在等待 ChatGPT 授权…")
-    try {
-      if (!Storage.get<boolean>(CHATGPT_NOTICE_KEY, { shared: true })) {
-        await Dialog.alert({
-          title: "正在使用你的 ChatGPT 计划",
-          message: "只有你主动粘贴对方消息或点击生成后，对方消息、可选聊天上下文和回复风格资料才会发送给 OpenAI 处理。请求使用不保存响应的模式；授权令牌仅保存在本机钥匙串。符合条件的请求会使用你的 ChatGPT 计划或额度，与 OpenAI API 账单分开。",
-          buttonLabel: "继续登录",
-        })
-        Storage.set(CHATGPT_NOTICE_KEY, true, { shared: true })
-      }
-      const account = await completeChatGPTSignIn()
-      setChatGPTAccount(account)
-      setAuthMode("chatgptPlan")
-      setChatGPTNotice("ChatGPT 账号已连接，正在读取模型…")
-    } catch (error) {
-      setChatGPTNotice(String(error).replace("Error: ", ""))
-    } finally {
-      setChatGPTBusy(false)
-    }
-  }, [chatGPTBusy])
-  const logoutChatGPT = useCallback(async () => {
-    const confirmed = await Dialog.confirm({
-      title: "退出 ChatGPT 账号",
-      message: "这会尝试撤销 ChatGPT 授权，并清除此设备上保存的登录令牌。",
-      cancelLabel: "取消",
-      confirmLabel: "退出登录",
-    })
+  }
+
+  async function openEditor(message?: QuickMessage) {
+    await Navigation.present({ element: <MessageEditor categoryTitle={category.title} message={message} onSave={async (text, answer) => {
+      await persist({ type: "message.save", categoryId: category.id, id: message?.id, text, answer })
+    }} />, modalPresentationStyle: "pageSheet" })
+  }
+
+  async function addCategory() {
+    const title = await Dialog.prompt({ title: "新增分类", placeholder: "例如：开黑回怼", confirmLabel: "添加", cancelLabel: "取消" })
+    if (title === null) return
+    const next = await commit({ type: "category.add", title })
+    if (next) { setSelectedId(next.categories[next.categories.length - 1].id); setSearch(""); setPageIndex(0) }
+  }
+
+  async function renameCategory() {
+    const title = await Dialog.prompt({ title: "重命名分类", defaultValue: category.title, confirmLabel: "保存", cancelLabel: "取消" })
+    if (title !== null) await commit({ type: "category.update", categoryId: category.id, title })
+  }
+
+  async function removeCategory() {
+    const confirmed = await Dialog.confirm({ title: `删除“${category.title}”？`, message: "分类中的消息也会一并删除。", confirmLabel: "删除", cancelLabel: "取消" })
     if (!confirmed) return
-    chatGPTModelRequestId++
-    chatGPTModelRequest?.abort()
-    chatGPTModelRequest = null
-    let remoteRevoked = false
-    try {
-      const credential = readChatGPTCredential()
-      if (credential) remoteRevoked = await revokeCredential(credential, fetch)
-    } catch { /* Local tokens are cleared even when the remote revocation cannot be confirmed. */ }
-    Keychain.remove(CHATGPT_CREDENTIAL_KEY)
-    setChatGPTModelBusy(false)
-    setAuthMode("apiKey")
-    Storage.set(CHATGPT_MODE_KEY, "apiKey", { shared: true })
-    setChatGPTAccount(readChatGPTAccount())
-    setChatGPTModels([])
-    setChatGPTNotice(remoteRevoked ? "已退出 ChatGPT 账号" : "本机令牌已清除；远程撤销未确认，请在 ChatGPT 设置中检查连接")
-    if (!remoteRevoked) await Dialog.alert({
-      title: "已在本机退出",
-      message: "本机令牌已清除，但无法确认远程授权已撤销。你也可以在 ChatGPT 设置中断开此应用。",
-      buttonLabel: "知道了",
-    })
-  }, [])
-  useEffect(() => {
-    if (authMode !== "chatgptPlan") return
-    if (!readChatGPTCredential()) { setChatGPTModels([]); setChatGPTNotice("请先使用 ChatGPT 账号授权"); return }
-    const timeout = setTimeout(() => { void refreshChatGPTModels() }, 100)
-    return () => { clearTimeout(timeout); chatGPTModelRequestId++; chatGPTModelRequest?.abort(); chatGPTModelRequest = null }
-  }, [authMode, refreshChatGPTModels])
-  const keyField = useMemo(
-    () => showKey
-      ? <TextField title="API Key" prompt="粘贴服务商 API Key" value={ai.apiKey} onChanged={(value) => saveAI({ ...ai, apiKey: value })} modifiers={modifiers().frame({ maxWidth: "infinity" })} />
-      : <SecureField title="API Key" prompt="粘贴服务商 API Key" value={ai.apiKey} onChanged={(value) => saveAI({ ...ai, apiKey: value })} modifiers={modifiers().frame({ maxWidth: "infinity" })} />,
-    [ai, saveAI, showKey],
-  )
-  useEffect(() => {
-    if (authMode !== "apiKey") return
-    const storedKeys = Storage.get<Record<AIProvider, string>>("aiKeys", { shared: true }) || {} as Record<AIProvider, string>
-    if (storedKeys[ai.provider] !== ai.apiKey) {
-      storedKeys[ai.provider] = ai.apiKey
-      Storage.set("aiKeys", storedKeys, { shared: true })
-    }
-    setModels([])
-    if (!ai.apiKey.trim()) {
-      setModelNotice("填写 API Key 后会自动读取可用模型")
-      return
-    }
-    setModelNotice("正在准备读取模型…")
-    const timeout = setTimeout(() => { void refreshModels() }, 650)
-    return () => clearTimeout(timeout)
-  }, [authMode, ai.provider, ai.apiKey, ai.endpoint])
+    const next = await commit({ type: "category.remove", categoryId: category.id })
+    if (next) { setSelectedId(next.defaultCategoryId); setSearch(""); setPageIndex(0) }
+  }
+
+  async function removeMessage(message: QuickMessage) {
+    const confirmed = await Dialog.confirm({ title: "删除这条消息？", message: message.text, confirmLabel: "删除", cancelLabel: "取消" })
+    if (confirmed) await commit({ type: "message.remove", categoryId: category.id, id: message.id })
+  }
 
   return (
     <NavigationStack>
-      <Form
-        formStyle="grouped"
-        navigationTitle="智能聊天键盘"
-        navigationBarTitleDisplayMode="inline"
-        toolbar={{ topBarTrailing: <Button title="关闭" systemImage="xmark" action={dismiss} /> }}
-      >
-        <Section header={<Text>回复偏好</Text>} footer={<Text>这些分类会共同影响 AI 生成的回复；关系语境不指定时，默认保持友好中性。</Text>}>
-          <Picker title="性别" pickerStyle="menu" value={profile.gender} onChanged={(value: any) => saveProfile({ ...profile, gender: value as Gender })}>{(["女", "男", "不透露"] as Gender[]).map((gender) => <Text tag={gender}>{gender}</Text>)}</Picker>
-          <TextField title="年龄" value={String(profile.age)} onChanged={(value) => saveProfile({ ...profile, age: clampAge(value) })} />
-          <Picker title="当前状态" pickerStyle="menu" value={profile.mood} onChanged={(value: any) => saveProfile({ ...profile, mood: value as Profile["mood"] })}>{moods.map((mood) => <Text tag={mood}>{mood}</Text>)}</Picker>
-          <Picker title="沟通习惯" pickerStyle="menu" value={profile.communicationStyle} onChanged={(value: any) => saveProfile({ ...profile, communicationStyle: value as Profile["communicationStyle"] })}>{communicationStyles.map((style) => <Text tag={style}>{style}</Text>)}</Picker>
-          <Picker title="表达风格" pickerStyle="menu" value={profile.tone} onChanged={(value: any) => saveProfile({ ...profile, tone: value as Profile["tone"] })}>{expressionStyles.map((tone) => <Text tag={tone}>{tone}</Text>)}</Picker>
-          <Picker title="关系语境" pickerStyle="menu" value={profile.relationship} onChanged={(value: any) => saveProfile({ ...profile, relationship: value as Profile["relationship"] })}>{relationshipContexts.map((relationship) => <Text tag={relationship}>{relationship}</Text>)}</Picker>
+      <Form formStyle="grouped" navigationTitle="快捷消息" navigationBarTitleDisplayMode="inline" toolbar={{ topBarTrailing: <Button title="完成" action={dismiss} /> }}>
+        <Section header={<Text>键盘</Text>} footer={<Text>消息保存在本地数据库。点选只填入文本，发送前可自行修改。</Text>}>
+          <HStack><Text>消息总数</Text><Spacer /><Text>{library.categories.reduce((total, item) => total + item.messages.length, 0)} 条</Text></HStack>
+          {defaultOptions.length ? <Picker title="默认分类" pickerStyle="menu" value={library.defaultCategoryId} onChanged={(value: string) => { void commit({ type: "preferences", defaultCategoryId: value }) }}>
+            {defaultOptions.map((item) => <Text key={item.id} tag={item.id}>{item.title}</Text>)}
+          </Picker> : <Text>添加消息后可设置默认分类。</Text>}
+          <Toggle title="按键音" value={library.soundEnabled} onChanged={(soundEnabled) => { void commit({ type: "preferences", soundEnabled }) }} />
         </Section>
 
-        <Section header={<Text>AI 服务</Text>} footer={<Text>{authMode === "apiKey" ? modelNotice : chatGPTNotice}</Text>}>
-          <Picker title="接入方式" pickerStyle="menu" value={authMode} onChanged={(value: any) => changeAuthMode(value as AIAuthMode)}><Text tag="apiKey">API Key</Text><Text tag="chatgptPlan">ChatGPT 账号计划</Text></Picker>
-          {authMode === "chatgptPlan" ? <>
-            <Text>使用 ChatGPT 计划用量，不计入 OpenAI API 账单。</Text>
-            {readChatGPTCredential()
-              ? <HStack>
-                  <Text>{chatGPTAccount?.email || "ChatGPT 账号已连接"}</Text>
-                  <Spacer />
-                  <Button title="退出" buttonStyle="plain" action={() => { void logoutChatGPT() }} />
-                </HStack>
-              : <Button title={chatGPTBusy ? "正在连接…" : "Continue with ChatGPT"} buttonStyle="borderedProminent" disabled={chatGPTBusy} action={() => { void loginChatGPT() }} />}
-            <HStack>
-              {chatGPTModels.length > 0
-                ? <Picker title="模型" pickerStyle="menu" value={selectedChatGPTModel || chatGPTModels[0].slug} onChanged={(value: any) => { const model = value as string; setSelectedChatGPTModel(model); Storage.set(CHATGPT_MODEL_KEY, model, { shared: true }) }}>{chatGPTModels.map((model) => <Text tag={model.slug}>{model.displayName}</Text>)}</Picker>
-                : <Text>{readChatGPTCredential() ? (chatGPTModelBusy ? "正在读取模型…" : "暂无可选模型") : "登录后读取可用模型"}</Text>}
-              <Button title={chatGPTModelBusy ? "读取中…" : "刷新"} systemImage="arrow.clockwise" buttonStyle="plain" disabled={chatGPTModelBusy || !readChatGPTCredential()} action={() => { void refreshChatGPTModels() }} />
-            </HStack>
-            {canTuneReasoning ? <><Picker title="推理程度" pickerStyle="menu" value={selectedReasoningEffort} onChanged={(value: any) => saveAI({ ...ai, reasoningEffort: value as string })}>{reasoningChoices.map(({ value, label }) => <Text tag={value}>{label}</Text>)}</Picker><Text>选项按当前模型能力提供；自动使用模型默认值。</Text></> : <Text>当前 ChatGPT 模型不支持手动调节推理程度</Text>}
-          </> : <>
-            <Picker title="服务商" pickerStyle="menu" value={ai.provider} onChanged={(value: any) => changeProvider(value as AIProvider)}>{providers.map((provider) => <Text tag={provider}>{provider}</Text>)}</Picker>
-            <HStack>
-              {keyField}
-              <Button title={showKey ? "隐藏" : "显示"} systemImage={showKey ? "eye" : "eye.slash"} action={() => setShowKey(!showKey)} />
-            </HStack>
-            <HStack>
-              {models.length > 0
-                ? <Picker title="模型" pickerStyle="menu" value={ai.model} onChanged={(v: any) => saveAI({ ...ai, model: v as string })}>{models.map((model) => <Text tag={model}>{model}</Text>)}</Picker>
-                : <TextField title="模型" prompt="填写模型名称" value={ai.model} onChanged={(v) => saveAI({ ...ai, model: v })} />}
-              <Button title={modelBusy ? "读取中…" : "刷新"} systemImage="arrow.clockwise" buttonStyle="plain" disabled={modelBusy || !ai.apiKey.trim()} action={() => { void refreshModels() }} />
-            </HStack>
-            {canTuneReasoning ? <><Picker title="推理程度" pickerStyle="menu" value={selectedReasoningEffort} onChanged={(value: any) => saveAI({ ...ai, reasoningEffort: value as string })}>{reasoningChoices.map(({ value, label }) => <Text tag={value}>{label}</Text>)}</Picker><Text>选项按当前模型能力提供；自动使用模型默认值。</Text></> : <Text>当前服务商或模型不支持手动调节推理程度</Text>}
-          </>}
+        <Section header={<Text>分类管理</Text>}>
+          <Picker title="当前分类" pickerStyle="menu" value={category.id} onChanged={(id: string) => { setSelectedId(id); setSearch(""); setPageIndex(0) }}>
+            {library.categories.map((item) => <Text key={item.id} tag={item.id}>{item.title} · {item.messages.length}</Text>)}
+          </Picker>
+          <Toggle title="在键盘中显示" value={category.enabled} onChanged={(enabled) => { void commit({ type: "category.update", categoryId: category.id, enabled }) }} />
+          <Button title="重命名分类" action={() => { void renameCategory() }} />
+          <Button title="新增分类" systemImage="plus" action={() => { void addCategory() }} />
+          <Button title="删除当前分类" role="destructive" disabled={library.categories.length === 1} action={() => { void removeCategory() }} />
         </Section>
 
-        {authMode === "apiKey" ? <Section header={<Text>高级设置</Text>}>
-          <Button title={showAdvanced ? "收起接口设置" : "自定义接口地址"} systemImage={showAdvanced ? "chevron.up" : "chevron.down"} action={() => setShowAdvanced(!showAdvanced)} />
-          {showAdvanced ? <TextField title="接口地址" prompt="https://…/chat/completions" value={ai.endpoint} onChanged={(v) => saveAI({ ...ai, endpoint: v })} /> : null}
-        </Section> : null}
+        <Section header={<Text>{category.title} · {category.messages.length} 条</Text>} footer={<Text>{notice}</Text>}>
+          <Button title="添加消息" systemImage="plus" action={() => { void openEditor() }} />
+          <TextField title="搜索当前分类" prompt="搜索消息或答案" value={search} onChanged={(value) => { setSearch(value); setPageIndex(0) }} />
+          {visibleMessages.length ? visibleMessages.map((message) => (
+            <HStack key={message.id} spacing={12}>
+              <Button buttonStyle="plain" action={() => { void openEditor(message) }}>
+                <VStack alignment="leading" spacing={4} modifiers={modifiers().frame({ maxWidth: "infinity", alignment: "leading" })}>
+                  <Text modifiers={modifiers().foregroundStyle("label")}>{message.text}</Text>
+                  {message.answer ? <Text modifiers={modifiers().font(12).foregroundStyle("secondaryLabel")}>答案：{message.answer}</Text> : null}
+                </VStack>
+              </Button>
+              <Spacer />
+              <Button title="删除" role="destructive" buttonStyle="borderless" action={() => { void removeMessage(message) }} />
+            </HStack>
+          )) : <Text>{query ? "没有匹配的消息。" : "还没有消息，点“添加消息”开始。"}</Text>}
+          {pageCount > 1 ? <HStack>
+            <Button title="上一页" buttonStyle="borderless" disabled={currentPage === 0} action={() => setPageIndex(currentPage - 1)} />
+            <Spacer /><Text>{currentPage + 1} / {pageCount}</Text><Spacer />
+            <Button title="下一页" buttonStyle="borderless" disabled={currentPage + 1 >= pageCount} action={() => setPageIndex(currentPage + 1)} />
+          </HStack> : null}
+        </Section>
       </Form>
     </NavigationStack>
   )
 }
 
-// Keep the lifecycle aligned with the official Quick Start: the script exits
-// only after the presented view has actually been dismissed.
 Script.enableMinimize(false)
-Navigation.present({
-  element: <App />,
-  modalPresentationStyle: "fullScreen",
-}).then(() => Script.exit())
+async function run() {
+  try {
+    const store = await openLocalMessageStore()
+    const initialLibrary = await store.readLibrary()
+    await Navigation.present({ element: <MessageSettings store={store} initialLibrary={initialLibrary} />, modalPresentationStyle: "fullScreen" })
+  } catch (error) {
+    await Dialog.alert({ title: "无法打开消息库", message: error instanceof Error ? error.message : "请重新运行脚本", buttonLabel: "关闭" })
+  } finally { Script.exit() }
+}
+void run()

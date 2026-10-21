@@ -1,0 +1,11 @@
+{
+  "name": "quick-message-keyboard",
+  "version": "2.0.0",
+  "private": true,
+  "scripts": {
+    "test": "node -e \"require.extensions['.tsx']=require.extensions['.js']; require('./quick-messages.test.tsx'); require('./message-store.test.tsx'); require('./ui.test.tsx')\""
+  },
+  "devDependencies": {
+    "typescript": "5.9.3"
+  }
+}
