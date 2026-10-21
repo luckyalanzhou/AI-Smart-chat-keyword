@@ -152,7 +152,8 @@ export async function openMessageStore(db, legacy, catalog = BUILTIN_CATALOG, ca
 
 export async function openLocalMessageStore() {
   if (typeof SQLite === "undefined") throw new Error("请使用支持 SQLite 的 Scripting 版本")
-  const dbPath = Path.join(FileManager.appGroupDocumentsDirectory, DATABASE_NAME)
+  const directory = FileManager.appGroupDocumentsDirectory.replace(/\/+$/, "")
+  const dbPath = `${directory}/${DATABASE_NAME}`
   const db = SQLite.open(dbPath, { foreignKeysEnabled: true, journalMode: "wal", busyMode: 5 })
   return openMessageStore(db, Storage.get(LIBRARY_STORAGE_KEY, { shared: true }))
 }

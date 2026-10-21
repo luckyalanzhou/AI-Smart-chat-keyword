@@ -4,8 +4,32 @@ const os = require("node:os")
 const path = require("node:path")
 const { test } = require("node:test")
 const { BUILTIN_CATALOG, CATALOG_VERSION } = require("./message-catalog.js")
-const { openMessageStore } = require("./message-store.js")
+const { openLocalMessageStore, openMessageStore } = require("./message-store.js")
 const createDatabase = require("./test-sqlite.js")
+
+test("native store opens without relying on an implicit Path global", async (t) => {
+  const db = createDatabase()
+  const names = ["SQLite", "FileManager", "Storage", "Path"]
+  const previous = new Map(names.map((name) => [name, Object.getOwnPropertyDescriptor(globalThis, name)]))
+  t.after(() => {
+    db.close()
+    for (const name of names) {
+      const descriptor = previous.get(name)
+      if (descriptor) Object.defineProperty(globalThis, name, descriptor)
+      else delete globalThis[name]
+    }
+  })
+  let openedPath
+  globalThis.SQLite = { open(path) { openedPath = path; return db } }
+  globalThis.FileManager = { appGroupDocumentsDirectory: "/scripting/app-group/Documents" }
+  globalThis.Storage = { get() { return null } }
+  delete globalThis.Path
+
+  const store = await openLocalMessageStore()
+
+  assert.equal(openedPath, "/scripting/app-group/Documents/quick-message-keyboard.sqlite")
+  assert.equal((await store.readPage("valorant")).total, 120)
+})
 
 test("SQLite initializes 510 unique local messages and supports indexed page queries", async (t) => {
   const db = createDatabase()
