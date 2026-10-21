@@ -139,6 +139,26 @@ function QuickMessageKeyboard({ store, initialPage, initialScenes }: { store: Me
     applyMessage(previousMessage)
   }
 
+  function clearInserted() {
+    if (!lastInserted || loading) return
+    const context = inputContext()
+    const units = graphemes(lastInserted.message.text)
+    if (!canReplaceInsertedMessage({ ...lastInserted, text: lastInserted.message.text }, context) || !units) {
+      setNotice("位置已变化，未清除内容")
+      return
+    }
+    try {
+      for (let index = 0; index < units.length; index++) CustomKeyboard.deleteBackward()
+      setLastInserted(null)
+      setPreviousMessage(null)
+      setCurrentMessage(null)
+      setShowAnswer(false)
+      setNotice("已清除刚填入的文本")
+    } catch {
+      setNotice("清空未完成；请检查输入框内容")
+    }
+  }
+
   function fillAnswer() {
     if (!currentMessage?.answer || loading) return
     const answer = { id: `${currentMessage.id}-answer`, text: currentMessage.answer }
@@ -180,6 +200,7 @@ function QuickMessageKeyboard({ store, initialPage, initialScenes }: { store: Me
 
       <HStack spacing={8}>
         {previousMessage ? <Button title="上一句" buttonStyle="plain" disabled={loading} action={showPrevious} /> : null}
+        {lastInserted ? <Button title="清空" buttonStyle="plain" disabled={loading} action={clearInserted} /> : null}
         <Spacer />
         <Text modifiers={modifiers().font(11).foregroundStyle("secondaryLabel")}>不自动发送</Text>
       </HStack>

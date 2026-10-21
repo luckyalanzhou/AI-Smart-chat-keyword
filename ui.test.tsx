@@ -144,6 +144,33 @@ test("category capsules insert a random phrase and repeat taps replace it with n
   assert.equal(host.keyboardDismissed, true)
 })
 
+test("clear removes only the latest keyboard insertion and preserves the user's draft prefix", async () => {
+  const host = await launch("keyboard.tsx")
+  host.before = "用户先写的内容："
+  const category = loadLibrary(null).categories.find((item) => item.id === "valorant")
+  button(host.root, category.title).props.action()
+  await settle()
+  const inserted = host.inserted[0]
+  button(host.root, "清空").props.action()
+  assert.equal(host.before, "用户先写的内容：")
+  assert.equal(host.inserted.length, 1)
+  assert.match(label(host.root.render()), /已清除刚填入的文本/)
+  assert.equal(nodes(host.root.render()).some((item) => item.type === "Button" && label(item) === "清空"), false)
+  assert.ok(inserted)
+})
+
+test("clear does not delete a phrase after the user changes text at the cursor", async () => {
+  const host = await launch("keyboard.tsx")
+  const category = loadLibrary(null).categories.find((item) => item.id === "valorant")
+  button(host.root, category.title).props.action()
+  await settle()
+  const draft = `${host.before}（保留这段手动编辑）`
+  host.before = draft
+  button(host.root, "清空").props.action()
+  assert.equal(host.before, draft)
+  assert.match(label(host.root.render()), /位置已变化，未清除内容/)
+})
+
 test("a long phrase is replaced when the host truncates before-cursor context", async () => {
   const library = loadLibrary(null)
   const text = "计划里的那颗闪，最好也能出现在现场。这波配合的距离，比包点之间还远。人没到齐先别开团，复盘倒不用这么着急集合。"
