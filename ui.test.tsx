@@ -231,6 +231,20 @@ test("changed input context inserts immediately at the current cursor without de
   assert.equal(nodes(host.root.render()).some((item) => item.type === "Button" && ["填入", "取消"].includes(label(item))), false)
 })
 
+test("repeated capsule taps replace the previous phrase after the user edits only its prefix", async () => {
+  const host = await launch("keyboard.tsx")
+  const category = loadLibrary(null).categories.find((item) => item.id === "valorant")
+  button(host.root, category.title).props.action()
+  await settle()
+  const original = host.before
+  host.before = `修改过的聊天前缀：${original}`
+  button(host.root, category.title).props.action()
+  await settle()
+  assert.equal(host.inserted.length, 2)
+  assert.equal(host.before, `修改过的聊天前缀：${host.inserted[1]}`)
+  assert.match(label(host.root.render()), /已换句/)
+})
+
 test("selected text is handled by immediate host insertion without a confirmation step", async () => {
   const host = await launch("keyboard.tsx")
   const category = loadLibrary(null).categories.find((item) => item.id === "valorant")

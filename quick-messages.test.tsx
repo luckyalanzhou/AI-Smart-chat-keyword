@@ -167,6 +167,16 @@ test("replacement requires a matching suffix, unchanged following context and no
   assert.equal(canReplaceInsertedMessage(atEnd, { before: atEnd.before, after: "新增尾部", allText: "上一句新增尾部", selected: null }), false)
 })
 
+test("replacement allows edited prefix text when the inserted phrase is still at the cursor", () => {
+  const previous = { text: "上一句快捷消息", before: "旧前缀上一句快捷消息", after: "", allText: "旧前缀上一句快捷消息" }
+  assert.equal(canReplaceInsertedMessage(previous, {
+    before: "用户编辑后的前缀上一句快捷消息", after: "", allText: "用户编辑后的前缀上一句快捷消息", selected: null,
+  }), true)
+  assert.equal(canReplaceInsertedMessage(previous, {
+    before: "用户编辑后的前缀上一句快捷消息（又加了字）", after: "", allText: "用户编辑后的前缀上一句快捷消息（又加了字）", selected: null,
+  }), false)
+})
+
 test("a long inserted message remains replaceable when the host returns a truncated cursor context", () => {
   const text = "前缀".repeat(30) + "这是一条很长的快捷回复，输入代理只返回光标前的一小段上下文。"
   const allText = `聊天原文${text}`

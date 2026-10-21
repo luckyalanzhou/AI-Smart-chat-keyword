@@ -143,14 +143,22 @@ export function drawNextMessage(messages, state = {}, random = Math.random) {
 }
 
 export function canReplaceInsertedMessage(previous, context) {
-  const before = previous?.before
-  const visibleTailLength = typeof before === "string" ? Math.min(before.length, previous.text?.length || 0) : 0
-  return Boolean(previous?.text && visibleTailLength > 0 && context
-    && typeof context.before === "string" && context.before === before
+  if (!previous?.text || !context || typeof context.before !== "string" || context.selected) return false
+  if (context.after !== previous.after) return false
+
+  const previousBefore = previous.before
+  const visibleTailLength = typeof previousBefore === "string" ? Math.min(previousBefore.length, previous.text.length) : 0
+  const unchangedSnapshot = visibleTailLength > 0
+    && context.before === previousBefore
     && context.before.endsWith(previous.text.slice(-visibleTailLength))
-    && context.after === previous.after
     && typeof previous.allText === "string" && context.allText === previous.allText
-    && !context.selected)
+  if (unchangedSnapshot) return true
+
+  // If surrounding text changed, only replace when the full inserted phrase is still
+  // immediately before the cursor and allText confirms the same trailing context.
+  return context.before.endsWith(previous.text)
+    && typeof context.allText === "string"
+    && context.allText.endsWith(previous.text + (context.after ?? ""))
 }
 
 export function getMessagePage(library, categoryId, pageIndex = 0) {
