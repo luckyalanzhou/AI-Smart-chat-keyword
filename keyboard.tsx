@@ -5,10 +5,20 @@ import type { DatabasePage, MessageStore } from "./message-store.js"
 import type { QuickMessage } from "./quick-messages.js"
 
 type InsertedMessage = { message: QuickMessage; before: string | null; after: string | null; allText: string | null }
-type MessageCandidate = { message: QuickMessage; categoryId: string; warning?: string }
 type SceneOption = { id: string; title: string; count: number }
 
 let activeQuery = 0
+const capsulePalette = ["#005FCC", "#5E35B1", "#AD1457", "#00695C", "#C2410C", "#37474F", "#3949AB"]
+for (let index = capsulePalette.length - 1; index > 0; index--) {
+  const swap = Math.floor(Math.random() * (index + 1))
+  ;[capsulePalette[index], capsulePalette[swap]] = [capsulePalette[swap], capsulePalette[index]]
+}
+const capsuleColors = new Map<string, string>()
+
+function colorForCapsule(id: string) {
+  if (!capsuleColors.has(id)) capsuleColors.set(id, capsulePalette[capsuleColors.size % capsulePalette.length])
+  return capsuleColors.get(id)!
+}
 
 function inputContext() {
   try {
@@ -38,37 +48,33 @@ function QuickMessageKeyboard({ store, initialPage, initialScenes }: { store: Me
   const [lastInserted, setLastInserted] = useState<InsertedMessage | null>(null)
   const [previousMessage, setPreviousMessage] = useState<QuickMessage | null>(null)
   const [currentMessage, setCurrentMessage] = useState<QuickMessage | null>(null)
-  const [candidate, setCandidate] = useState<MessageCandidate | null>(null)
   const [showAnswer, setShowAnswer] = useState(false)
   const [drawBags, setDrawBags] = useState<Record<string, { remaining: string[]; lastId: string }>>({})
   const currentCategory = initialPage.categories.find((item) => item.id === categoryId) || initialPage.categories[0]
 
-  function fillAtCursor(item: MessageCandidate) {
-    const context = inputContext()
+  function fillAtCursor(item: QuickMessage, successNotice = "已填入 · 发送前可修改") {
     try {
-      CustomKeyboard.insertText(item.message.text)
+      CustomKeyboard.insertText(item.text)
       setPreviousMessage(null)
       const insertedContext = inputContext()
       setLastInserted({
-        message: item.message,
+        message: item,
         before: insertedContext?.before ?? null,
         after: insertedContext?.after ?? null,
         allText: insertedContext?.allText ?? null,
       })
-      setCurrentMessage(item.message)
+      setCurrentMessage(item)
       setShowAnswer(false)
-      setCandidate(null)
-      setNotice("已填入 · 发送前可修改")
+      setNotice(successNotice)
       if (initialPage.soundEnabled) {
         try { CustomKeyboard.playInputClick() } catch { /* Optional keyboard click sound. */ }
       }
     } catch {
-      setCandidate(item)
       setNotice("填入失败；请确认输入框仍处于编辑状态")
     }
   }
 
-  function applyMessage(item: MessageCandidate) {
+  function applyMessage(item: QuickMessage) {
     if (!lastInserted) {
       fillAtCursor(item)
       return
@@ -76,31 +82,28 @@ function QuickMessageKeyboard({ store, initialPage, initialScenes }: { store: Me
     const context = inputContext()
     const units = graphemes(lastInserted.message.text)
     if (!canReplaceInsertedMessage({ ...lastInserted, text: lastInserted.message.text }, context) || !units) {
-      setCandidate({ ...item, warning: "无法确认上次句子的位置，因此不会自动替换。填入会按当前光标或选区执行。" })
-      setNotice("输入位置已变化；确认后会在光标处填入")
+      fillAtCursor(item, "已填入 · 原内容保留")
       return
     }
     try {
       for (let index = 0; index < units.length; index++) CustomKeyboard.deleteBackward()
-      CustomKeyboard.insertText(item.message.text)
+      CustomKeyboard.insertText(item.text)
       const insertedContext = inputContext()
       setPreviousMessage(lastInserted.message)
       setLastInserted({
-        message: item.message,
+        message: item,
         before: insertedContext?.before ?? null,
         after: insertedContext?.after ?? null,
         allText: insertedContext?.allText ?? null,
       })
-      setCurrentMessage(item.message)
+      setCurrentMessage(item)
       setShowAnswer(false)
-      setCandidate(null)
       setNotice("已换句 · 发送前可修改")
       if (initialPage.soundEnabled) {
         try { CustomKeyboard.playInputClick() } catch { /* Optional keyboard click sound. */ }
       }
     } catch {
-      setCandidate({ ...item, warning: "替换操作未完成，请先检查输入框；填入会按当前光标或选区执行。" })
-      setNotice("替换未完成；请检查输入框后再填入")
+      setNotice("替换未完成；请检查输入框内容")
     }
   }
 
@@ -122,11 +125,10 @@ function QuickMessageKeyboard({ store, initialPage, initialScenes }: { store: Me
       const result = drawNextMessage(messages, drawBags[scope])
       setDrawBags((current) => ({ ...current, [scope]: result.state }))
       if (!result.message) {
-        setCandidate(null)
         setNotice("这个场景还没有消息")
         return
       }
-      applyMessage({ message: result.message, categoryId: category })
+      applyMessage(result.message)
     } catch {
       if (requestId === activeQuery) setNotice("读取失败，请重新点选")
     } finally {
@@ -134,20 +136,15 @@ function QuickMessageKeyboard({ store, initialPage, initialScenes }: { store: Me
     }
   }
 
-  function fillCandidate() {
-    if (!candidate || loading) return
-    fillAtCursor(candidate)
-  }
-
   function showPrevious() {
     if (!previousMessage || loading) return
-    applyMessage({ message: previousMessage, categoryId })
+    applyMessage(previousMessage)
   }
 
   function fillAnswer() {
     if (!currentMessage?.answer || loading) return
     const answer = { id: `${currentMessage.id}-answer`, text: currentMessage.answer }
-    applyMessage({ message: answer, categoryId })
+    applyMessage(answer)
   }
 
   return (
@@ -162,7 +159,7 @@ function QuickMessageKeyboard({ store, initialPage, initialScenes }: { store: Me
       <ScrollView axes="horizontal" scrollIndicator="hidden" modifiers={modifiers().frame({ height: 46 })}>
         <HStack spacing={6}>
           {initialPage.categories.map((category) => (
-            <Button key={category.id} title={category.title} buttonStyle={category.id === categoryId ? "borderedProminent" : "bordered"} buttonBorderShape="capsule" disabled={loading} action={() => { void choose(category.id, "all") }} modifiers={modifiers().frame({ minHeight: 44 })} />
+            <Button key={category.id} title={category.title} buttonStyle="borderedProminent" buttonBorderShape="capsule" tint={colorForCapsule(`category:${category.id}`)} disabled={loading} action={() => { void choose(category.id, "all") }} modifiers={modifiers().frame({ minHeight: 44 }).shadow({ color: "rgba(0,0,0,0.22)", radius: 1, x: 0, y: 3 })} />
           ))}
         </HStack>
       </ScrollView>
@@ -170,20 +167,13 @@ function QuickMessageKeyboard({ store, initialPage, initialScenes }: { store: Me
       {scenes.some((scene) => scene.id !== "all") ? <ScrollView axes="horizontal" scrollIndicator="hidden" modifiers={modifiers().frame({ height: 46 })}>
         <HStack spacing={6}>
           {scenes.map((scene) => (
-            <Button key={scene.id} title={`${scene.title} · ${scene.count}`} buttonStyle={activeSceneId === scene.id ? "borderedProminent" : "bordered"} buttonBorderShape="capsule" disabled={loading} action={() => { void choose(categoryId, scene.id) }} modifiers={modifiers().frame({ minHeight: 44 })} />
+            <Button key={scene.id} title={`${scene.title} · ${scene.count}`} buttonStyle="borderedProminent" buttonBorderShape="capsule" tint={colorForCapsule(`scene:${categoryId}:${scene.id}`)} disabled={loading} action={() => { void choose(categoryId, scene.id) }} modifiers={modifiers().frame({ minHeight: 44 }).shadow({ color: "rgba(0,0,0,0.22)", radius: 1, x: 0, y: 3 })} />
           ))}
         </HStack>
       </ScrollView> : null}
 
       <VStack alignment="leading" spacing={4} padding={{ horizontal: 8, vertical: 5 }} modifiers={modifiers().frame({ maxWidth: "infinity", maxHeight: "infinity" })}>
-        {candidate ? <VStack alignment="leading" spacing={4}>
-          <Text modifiers={modifiers().font(15).foregroundStyle("label")}>{candidate.message.text}</Text>
-          <Text modifiers={modifiers().font(11).foregroundStyle("secondaryLabel")}>{candidate.warning || "无法确认上一句的位置；填入会按当前光标或选区执行。"}</Text>
-          <HStack>
-            <Button title="填入" buttonStyle="borderedProminent" disabled={loading} action={fillCandidate} />
-            <Button title="取消" buttonStyle="plain" disabled={loading} action={() => { setCandidate(null); setNotice("候选已取消") }} />
-          </HStack>
-        </VStack> : currentMessage ? <VStack alignment="leading" spacing={4}>
+        {currentMessage ? <VStack alignment="leading" spacing={4}>
           <Text modifiers={modifiers().font(12).foregroundStyle("secondaryLabel")}>{currentCategory?.title || "快捷消息"}{currentMessage.scene ? ` · ${currentMessage.scene}` : ""}</Text>
           {currentMessage.answer ? <HStack>
             <Button title={showAnswer ? "收起答案" : "查看答案"} buttonStyle="plain" disabled={loading} action={() => setShowAnswer(!showAnswer)} />
@@ -198,7 +188,7 @@ function QuickMessageKeyboard({ store, initialPage, initialScenes }: { store: Me
         <Spacer />
         <Text modifiers={modifiers().font(11).foregroundStyle("secondaryLabel")}>{currentCategory?.title || "选择分类"}{currentMessage?.scene ? ` · ${currentMessage.scene}` : ""}</Text>
         <Spacer />
-        <Text modifiers={modifiers().font(11).foregroundStyle("secondaryLabel")}>点选填入，不自动发送</Text>
+        <Text modifiers={modifiers().font(11).foregroundStyle("secondaryLabel")}>点胶囊直接填入，不自动发送</Text>
       </HStack>
     </VStack>
   )

@@ -20,6 +20,7 @@ async function launch(file, initial = loadLibrary(null), db = createDatabase()) 
   const host = { values, screens: [], inserted: [], clicks: 0, heights: [], presentations: 0, before: "", after: null, selected: null, contextLimit: Infinity, failWrite: false, failInsert: false, failDelete: false, failSound: false, confirm: true, prompt: null }
   host.store = store
   host.db = db
+  host.modifierCalls = []
   Object.defineProperty(host, "failWrite", { get: () => db.failWrite, set: (value) => { db.failWrite = value } })
   let activeScreen
   function screen(element, resolve) {
@@ -33,7 +34,7 @@ async function launch(file, initial = loadLibrary(null), db = createDatabase()) 
     return instance
   }
   const controls = Object.fromEntries(["Button", "Form", "HStack", "NavigationStack", "Picker", "ScrollView", "Section", "Spacer", "Text", "TextField", "Toggle", "VStack"].map((name) => [name, name]))
-  const modifier = new Proxy({}, { get: () => () => modifier })
+  const modifier = new Proxy({}, { get: (_target, name) => (...args) => { host.modifierCalls.push([String(name), args]); return modifier } })
   const scripting = { ...controls,
     modifiers: () => modifier,
     useState(initialValue) {
@@ -215,7 +216,7 @@ test("saved preferences hide categories, set the default and suppress click audi
   assert.equal(host.clicks, 0)
 })
 
-test("changed input context shows an explicit candidate instead of replacing user text", async () => {
+test("changed input context inserts immediately at the current cursor without deleting prior text", async () => {
   const host = await launch("keyboard.tsx")
   const category = loadLibrary(null).categories.find((item) => item.id === "valorant")
   button(host.root, category.title).props.action()
@@ -224,15 +225,13 @@ test("changed input context shows an explicit candidate instead of replacing use
   host.before = `${original}（用户修改）`
   button(host.root, category.title).props.action()
   await settle()
-  assert.equal(host.inserted.length, 1)
-  assert.equal(host.before, `${original}（用户修改）`)
-  assert.match(label(host.root.render()), /无法确认上次句子的位置/)
-  button(host.root, "填入").props.action()
   assert.equal(host.inserted.length, 2)
   assert.equal(host.before, `${original}（用户修改）${host.inserted[1]}`)
+  assert.match(label(host.root.render()), /已填入 · 原内容保留/)
+  assert.equal(nodes(host.root.render()).some((item) => item.type === "Button" && ["填入", "取消"].includes(label(item))), false)
 })
 
-test("selected text prevents silent replacement and candidate cancellation is safe", async () => {
+test("selected text is handled by immediate host insertion without a confirmation step", async () => {
   const host = await launch("keyboard.tsx")
   const category = loadLibrary(null).categories.find((item) => item.id === "valorant")
   button(host.root, category.title).props.action()
@@ -240,14 +239,13 @@ test("selected text prevents silent replacement and candidate cancellation is sa
   host.selected = "已选中的用户文字"
   button(host.root, category.title).props.action()
   await settle()
-  const beforeCancel = host.before
-  assert.equal(host.inserted.length, 1)
-  button(host.root, "取消").props.action()
-  assert.equal(host.before, beforeCancel)
-  assert.equal(host.inserted.length, 1)
+  assert.equal(host.inserted.length, 2)
+  assert.match(host.before, /已选中的用户文字/)
+  assert.match(host.before, new RegExp(host.inserted[1]))
+  assert.match(label(host.root.render()), /已填入 · 原内容保留/)
 })
 
-test("a failed delete keeps the previous phrase and presents an honest recovery option", async () => {
+test("a failed delete keeps the previous phrase and reports that replacement did not finish", async () => {
   const host = await launch("keyboard.tsx")
   const category = loadLibrary(null).categories.find((item) => item.id === "valorant")
   button(host.root, category.title).props.action()
@@ -258,7 +256,17 @@ test("a failed delete keeps the previous phrase and presents an honest recovery 
   await settle()
   assert.equal(host.before, previous)
   assert.equal(host.inserted.length, 1)
-  assert.match(label(host.root.render()), /替换操作未完成，请先检查输入框/)
+  assert.match(label(host.root.render()), /替换未完成；请检查输入框内容/)
+})
+
+test("capsules use randomized session colors and raised native capsule buttons", async () => {
+  const host = await launch("keyboard.tsx")
+  const rendered = nodes(host.root.render()).filter((item) => item.type === "Button" && item.props.buttonBorderShape === "capsule")
+  assert.ok(rendered.length >= 2)
+  assert.ok(rendered.every((item) => item.props.buttonStyle === "borderedProminent" && /^#[0-9A-F]{6}$/i.test(item.props.tint)))
+  const firstColors = rendered.map((item) => item.props.tint)
+  assert.deepEqual(nodes(host.root.render()).filter((item) => item.type === "Button" && item.props.buttonBorderShape === "capsule").map((item) => item.props.tint), firstColors)
+  assert.ok(host.modifierCalls.some(([name, args]) => name === "shadow" && args[0]?.y === 3))
 })
 
 test("host insertion failures show feedback instead of claiming success", async () => {
