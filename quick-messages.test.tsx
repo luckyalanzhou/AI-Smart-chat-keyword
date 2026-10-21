@@ -162,4 +162,6 @@ test("replacement requires a matching suffix, unchanged following context and no
   assert.equal(canReplaceInsertedMessage(previous, { before: "原来的句子", after: "别的内容", selected: "" }), false)
   assert.equal(canReplaceInsertedMessage(previous, { before: "原来的句子", after: " 草稿尾部", selected: "选中" }), false)
   assert.equal(canReplaceInsertedMessage(previous, { before: null, after: " 草稿尾部" }), false)
+  assert.equal(canReplaceInsertedMessage({ text: "上一句", after: null }, { before: "上一句", after: null, selected: null }), true)
+  assert.equal(canReplaceInsertedMessage({ text: "上一句", after: null }, { before: "上一句", after: "新增尾部", selected: null }), false)
 })

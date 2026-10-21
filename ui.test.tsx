@@ -17,7 +17,7 @@ async function launch(file, initial = loadLibrary(null), db = createDatabase()) 
   databases.add(db)
   const store = await openMessageStore(db, initial)
   const values = new Map([[LIBRARY_STORAGE_KEY, JSON.parse(JSON.stringify(initial))], ["unrelated.setting", { value: "keep" }]])
-  const host = { values, screens: [], inserted: [], clicks: 0, heights: [], presentations: 0, before: "", after: "", selected: "", failWrite: false, failInsert: false, failDelete: false, failSound: false, confirm: true, prompt: null }
+  const host = { values, screens: [], inserted: [], clicks: 0, heights: [], presentations: 0, before: "", after: null, selected: null, failWrite: false, failInsert: false, failDelete: false, failSound: false, confirm: true, prompt: null }
   host.store = store
   host.db = db
   Object.defineProperty(host, "failWrite", { get: () => db.failWrite, set: (value) => { db.failWrite = value } })
@@ -119,7 +119,7 @@ function field(screen, title) {
   return found
 }
 
-test("category capsules immediately insert a random phrase and repeat taps replace it", async () => {
+test("category capsules insert a random phrase and repeat taps replace it with nullable host context", async () => {
   const host = await launch("keyboard.tsx")
   assert.equal(host.presentations, 1)
   assert.deepEqual(host.heights, [320])
